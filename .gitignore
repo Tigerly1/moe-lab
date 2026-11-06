@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+runs/*
+!runs/routing_qwen3.npz
+!runs/*_stats.json
+!runs/cmp_*.json
+.pytest_cache/
+run.log
+autoresearch/results.tsv

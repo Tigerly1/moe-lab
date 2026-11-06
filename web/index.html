@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MoE Kernel Lab</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs/loader.js"></script>
+<style>
+  :root { --bg:#0f1115; --panel:#171a21; --line:#2a2f3a; --fg:#d7dae0; --mut:#8b93a3; --acc:#5b9cff; --ok:#3fb950; --bad:#f85149; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:13px/1.4 -apple-system, system-ui, sans-serif; height:100vh; display:grid;
+         grid-template-columns: 220px 1fr 1fr; grid-template-rows: auto 1fr; }
+  header { grid-column:1/-1; display:flex; gap:10px; align-items:center; padding:8px 12px; border-bottom:1px solid var(--line); flex-wrap:wrap; }
+  header h1 { font-size:14px; margin:0 12px 0 0; }
+  select, input, button { background:var(--panel); color:var(--fg); border:1px solid var(--line); border-radius:6px; padding:4px 8px; font:inherit; }
+  button { cursor:pointer; } button.primary { background:var(--acc); border-color:var(--acc); color:#fff; font-weight:600; }
+  label { color:var(--mut); display:flex; gap:4px; align-items:center; }
+  #side { border-right:1px solid var(--line); padding:10px; overflow:auto; }
+  #side h3 { font-size:11px; text-transform:uppercase; color:var(--mut); margin:12px 0 6px; }
+  .v { display:flex; align-items:center; gap:6px; padding:4px 6px; border-radius:6px; cursor:pointer; }
+  .v:hover { background:var(--panel); } .v.active { background:#1f2a3d; }
+  .v .dot { width:10px; height:10px; border-radius:50%; flex:none; }
+  #editorWrap { display:flex; flex-direction:column; border-right:1px solid var(--line); min-width:0; }
+  #edBar { padding:6px 10px; display:flex; gap:8px; align-items:center; border-bottom:1px solid var(--line); color:var(--mut); }
+  #editor { flex:1; }
+  #right { overflow:auto; padding:10px; display:flex; flex-direction:column; gap:12px; min-width:0; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:8px; }
+  .card h4 { margin:0 0 6px; font-size:12px; color:var(--mut); font-weight:600; }
+  canvas { max-height:260px; }
+  table { width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums; font-size:12px; }
+  td, th { padding:3px 6px; border-bottom:1px solid var(--line); text-align:right; } td:first-child, th:first-child { text-align:left; }
+  .ok { color:var(--ok); } .bad { color:var(--bad); }
+  #log { font:11px/1.4 ui-monospace, monospace; white-space:pre-wrap; max-height:180px; overflow:auto; color:var(--mut); }
+  #status { margin-left:auto; color:var(--mut); }
+</style>
+</head>
+<body>
+<header>
+  <h1>MoE Kernel Lab</h1>
+  <label>backend <select id="backend"><option value="mlx">MLX / Metal (local)</option><option value="cuda">CUDA / Triton (Modal)</option></select></label>
+  <label>shape <select id="shape"></select></label>
+  <label>dtype <select id="dtype"><option>float16</option><option>bfloat16</option><option>float32</option></select></label>
+  <label>routing <select id="routing"><option>uniform</option><option>zipf</option><option>one_hot</option><option>trace</option></select></label>
+  <label>roofline <select id="hw"></select></label>
+  <label>T <input id="tokens" size="22" value="1,2,4,8,16,32,64,128,256"></label>
+  <label>iters <input id="iters" size="3" value="30"></label>
+  <button class="primary" id="runBtn" title="Cmd+Enter">▶ Run</button>
+  <span id="status">idle</span>
+</header>
+
+<aside id="side">
+  <h3>Variants (checked = run)</h3>
+  <div id="vlist"></div>
+  <h3>Baseline for speedup</h3>
+  <select id="baseline" style="width:100%"></select>
+  <h3>Shape</h3>
+  <div id="shapeInfo" style="color:var(--mut)"></div>
+</aside>
+
+<section id="editorWrap">
+  <div id="edBar"><span id="edName">—</span><span style="margin-left:auto"></span>
+    <button id="saveBtn" title="Cmd+S">Save</button><button id="forkBtn">Fork…</button></div>
+  <div id="editor"></div>
+</section>
+
+<section id="right">
+  <div class="card"><h4>Latency vs tokens (log-log) — solid: current run, dashed: previous run, grey: roofline floor</h4><canvas id="cLat"></canvas></div>
+  <div class="card"><h4>Achieved bandwidth (GB/s) — line: peak</h4><canvas id="cBw"></canvas></div>
+  <div class="card"><h4>Speedup vs baseline</h4><canvas id="cSp"></canvas></div>
+  <div class="card"><h4>Results</h4><table id="tbl"><thead><tr><th>variant</th><th>T</th><th>µs</th><th>p20–p80</th><th title="per call incl. host eval+sync">sync µs</th><th>GB/s</th><th>% roof</th><th>rel err</th><th></th></tr></thead><tbody></tbody></table></div>
+  <div class="card"><h4>Log</h4><div id="log"></div></div>
+</section>
+
+<script>
+const $ = id => document.getElementById(id);
+const PALETTE = ["#5b9cff","#f0883e","#3fb950","#d2a8ff","#ff7b72","#79c0ff","#e3b341","#56d4dd","#f778ba","#a5d6ff","#7ee787","#ffa657"];
+let META, editor, current = null, dirty = false;
+const checked = {mlx: new Set(), cuda: new Set()};
+let results = {}, prev = {};   // results[variant][T] = rec
+
+const color = n => { const l = META.variants[$("backend").value]; const i = l.indexOf(n); return PALETTE[(i < 0 ? l.length : i) % PALETTE.length]; };
+const log = (s, cls) => { const d = document.createElement("div"); d.textContent = s; if (cls) d.className = cls; $("log").prepend(d); };
+
+async function api(path, opts) { const r = await fetch(path, opts); if (!r.ok) throw new Error(await r.text()); return r.json(); }
+
+// ---------- roofline floor (same formulas as moelab/roofline.py) ----------
+function floorUs(T, s, hw, bits=16) {
+  const h = META.hardware[hw];
+  const U = s.E * (1 - Math.pow(1 - s.k / s.E, T));
+  const bytes = U * 3 * s.d * s.f * bits / 8 + 2*T*s.d*2 + 2*T*s.k*s.f*2;
+  return 1e6 * Math.max(bytes / (h.bw_gbs*1e9), 6*s.d*s.f*T*s.k / (h.tflops_fp16*1e12));
+}
+
+// ---------- charts ----------
+const axes = (ylog, ytitle) => ({
+  x: { type:"logarithmic", title:{display:true,text:"tokens T",color:"#8b93a3"}, ticks:{color:"#8b93a3", callback:v=>[1,2,4,8,16,32,64,128,256,512,1024,2048,4096].includes(v)?v:""}, grid:{color:"#2a2f3a"} },
+  y: { type: ylog?"logarithmic":"linear", title:{display:true,text:ytitle,color:"#8b93a3"}, ticks:{color:"#8b93a3"}, grid:{color:"#2a2f3a"} } });
+const mk = (id, ylog, yt) => new Chart($(id), { type:"line", data:{datasets:[]},
+  options:{ animation:false, parsing:false, responsive:true, scales:axes(ylog, yt),
+            plugins:{legend:{labels:{color:"#d7dae0", boxWidth:10, filter:i=>!i.text.startsWith("_")}}} } });
+let cLat, cBw, cSp;
+
+function series(map, key) { return Object.values(map||{}).sort((a,b)=>a.T-b.T).map(r => ({x:r.T, y:typeof key==="function"?key(r):r[key]})); }
+
+function redraw() {
+  const s = META.shapes[$("shape").value], hw = $("hw").value, Ts = parseTokens();
+  const lat = [], bw = [], sp = [];
+  lat.push({label:"roofline fp16", data:Ts.map(T=>({x:T,y:floorUs(T,s,hw,16)})), borderColor:"#555", borderDash:[2,2], pointRadius:0});
+  lat.push({label:"roofline q4", data:Ts.map(T=>({x:T,y:floorUs(T,s,hw,4.5)})), borderColor:"#777", borderDash:[6,3], pointRadius:0});
+  bw.push({label:"_peak", data:Ts.map(T=>({x:T,y:META.hardware[hw].bw_gbs})), borderColor:"#555", borderDash:[2,2], pointRadius:0});
+  const base = results[$("baseline").value];
+  for (const v of Object.keys(results)) {
+    const c = color(v);
+    lat.push({label:v, data:series(results[v],"median_us"), borderColor:c, backgroundColor:c});
+    bw.push({label:v, data:series(results[v],"gbs"), borderColor:c, backgroundColor:c});
+    if (prev[v]) lat.push({label:"_"+v+" prev", data:series(prev[v],"median_us"), borderColor:c, borderDash:[5,4], pointRadius:0, borderWidth:1});
+    if (base) sp.push({label:v, data:series(results[v], r => base[r.T] ? base[r.T].median_us / r.median_us : null).filter(p=>p.y), borderColor:c, backgroundColor:c});
+  }
+  cLat.data.datasets = lat; cBw.data.datasets = bw; cSp.data.datasets = sp;
+  cLat.update(); cBw.update(); cSp.update();
+  const rows = Object.values(results).flatMap(m => Object.values(m)).sort((a,b)=>a.T-b.T || a.median_us-b.median_us);
+  $("tbl").tBodies[0].innerHTML = rows.map(r => `<tr><td style="color:${color(r.variant)}">${r.variant}</td><td>${r.T}</td><td>${r.median_us.toFixed(1)}</td>
+    <td>${r.p20_us.toFixed(0)}–${r.p80_us.toFixed(0)}</td><td>${r.sync_us?r.sync_us.toFixed(0):"–"}</td><td>${r.gbs.toFixed(1)}</td><td>${(100*r.frac_of_floor).toFixed(0)}%</td>
+    <td>${r.rel_fro!==undefined?r.rel_fro.toExponential(1):"–"}</td><td class="${r.ok?"ok":"bad"}">${r.ok?"✓":"✗ WRONG"}</td></tr>`).join("");
+}
+
+// ---------- variants ----------
+function renderVariants() {
+  const b = $("backend").value, list = META.variants[b];
+  $("vlist").innerHTML = "";
+  for (const n of list) {
+    const d = document.createElement("div"); d.className = "v" + (current===n?" active":"");
+    d.innerHTML = `<input type="checkbox" ${checked[b].has(n)?"checked":""}><span class="dot" style="background:${color(n)}"></span><span>${n}</span>`;
+    d.querySelector("input").onclick = e => { e.stopPropagation(); e.target.checked ? checked[b].add(n) : checked[b].delete(n); };
+    d.onclick = () => openVariant(n);
+    $("vlist").append(d);
+  }
+  $("baseline").innerHTML = list.map(n => `<option ${n===$("baseline").dataset.v?"selected":""}>${n}</option>`).join("");
+}
+async function openVariant(n) {
+  if (dirty && !confirm("Discard unsaved changes?")) return;
+  const v = await api(`/api/variant/${$("backend").value}/${n}`);
+  current = n; editor.setValue(v.source); dirty = false; $("edName").textContent = n + ".py"; renderVariants();
+}
+async function save() {
+  if (!current) return;
+  await api(`/api/variant/${$("backend").value}/${current}`, {method:"PUT", headers:{"content-type":"application/json"}, body:JSON.stringify({source:editor.getValue()})});
+  dirty = false; $("edName").textContent = current + ".py"; log(`saved ${current}`);
+}
+async function fork() {
+  const n = prompt("New variant name (a-z, 0-9, _):", current + "_v2"); if (!n) return;
+  current = n; await save(); META = await api("/api/meta"); checked[$("backend").value].add(n); renderVariants();
+}
+
+// ---------- run ----------
+const parseTokens = () => $("tokens").value.split(",").map(s=>parseInt(s)).filter(x=>x>0);
+async function run() {
+  if (dirty) await save();
+  const b = $("backend").value, vs = [...checked[b]];
+  if (!vs.length) { log("check at least one variant", "bad"); return; }
+  for (const v of vs) { if (results[v]) prev[v] = results[v]; delete results[v]; }
+  $("runBtn").disabled = true; $("status").textContent = "running…";
+  const job = {backend:b, variants:vs, shape:$("shape").value, tokens:parseTokens(), dtype:$("dtype").value,
+               routing:$("routing").value, hw:$("hw").value, iters:+$("iters").value};
+  try {
+    const r = await fetch("/api/run", {method:"POST", headers:{"content-type":"application/json"}, body:JSON.stringify(job)});
+    const reader = r.body.getReader(), dec = new TextDecoder(); let buf = "";
+    for (;;) {
+      const {value, done} = await reader.read(); if (done) break;
+      buf += dec.decode(value, {stream:true});
+      let i; while ((i = buf.indexOf("\n")) >= 0) { handle(JSON.parse(buf.slice(0,i))); buf = buf.slice(i+1); }
+    }
+  } catch (e) { log(String(e), "bad"); }
+  $("runBtn").disabled = false; $("status").textContent = "idle";
+}
+function handle(m) {
+  if (m.type === "result") { (results[m.variant] ||= {})[m.T] = m; $("status").textContent = `${m.variant} T=${m.T}`; redraw();
+    if (!m.ok) log(`✗ ${m.variant} T=${m.T} WRONG: rel err ${m.rel_fro}`, "bad"); }
+  else if (m.type === "error") log(`${m.path||""}\n${m.error}\n${m.trace||""}`, "bad");
+  else if (m.type === "env") log(`env: ${m.device||m.gpu} ${m.mlx?"mlx "+m.mlx:""} shape ${JSON.stringify(m.shape)}`);
+  else if (m.type === "start") log(`→ ${m.variant}`);
+}
+
+// ---------- boot ----------
+(async () => {
+  META = await api("/api/meta");
+  $("shape").innerHTML = Object.keys(META.shapes).map(k => `<option ${k==="qwen3-30b-a3b"?"selected":""}>${k}</option>`).join("");
+  $("hw").innerHTML = Object.entries(META.hardware).map(([k,h]) => `<option value="${k}">${h.label}</option>`).join("");
+  const showShape = () => { const s = META.shapes[$("shape").value]; $("shapeInfo").innerHTML = `d=${s.d} f=${s.f}<br>E=${s.E} top-k=${s.k}<br>expert fp16 = ${(3*s.d*s.f*2/1e6).toFixed(1)} MB`; redraw(); };
+  $("shape").onchange = () => { results = {}; prev = {}; showShape(); };
+  $("hw").onchange = redraw; $("baseline").onchange = e => { e.target.dataset.v = e.target.value; redraw(); };
+  $("backend").onchange = () => { results = {}; prev = {}; current = null; renderVariants(); redraw(); };
+  $("runBtn").onclick = run; $("saveBtn").onclick = save; $("forkBtn").onclick = fork;
+  ["gather_mm","metal_simd_gemv"].forEach(n => META.variants.mlx.includes(n) && checked.mlx.add(n));
+  $("baseline").dataset.v = "gather_mm";
+  cLat = mk("cLat", true, "µs (median)"); cBw = mk("cBw", false, "GB/s"); cSp = mk("cSp", false, "× faster");
+  renderVariants(); showShape();
+  require.config({ paths: { vs: "https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs" } });
+  require(["vs/editor/editor.main"], () => {
+    editor = monaco.editor.create($("editor"), { language:"python", theme:"vs-dark", fontSize:13, minimap:{enabled:false}, automaticLayout:true });
+    editor.onDidChangeModelContent(() => { if (!dirty && current) { dirty = true; $("edName").textContent = current + ".py ●"; } });
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, save);
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, run);
+    openVariant("metal_simd_gemv");
+  });
+})();
+</script>
+</body>
+</html>
