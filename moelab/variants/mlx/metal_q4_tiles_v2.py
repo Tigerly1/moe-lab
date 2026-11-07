@@ -31,6 +31,11 @@ R_UP, R_DOWN = 1, 2  # tuned on M4 Pro, T=1 (scan: R_UP=1 best on all shapes)
 SG_PER_TG = 4
 
 HEADER = """
+// GLU activation on the gate (ACT 0 = SiLU as mlx-lm swiglu, 1 = tanh-GELU as nn.gelu_approx, Gemma-4 geglu)
+template <int A> inline float glu_act(float g) {
+    if (A == 1) return 0.5f * g * (1.f + metal::precise::tanh(0.7978845608028654f * (g + 0.044715f * g * g * g)));
+    return g / (1.f + metal::exp(-g));
+}
 // load 32 activations, prescale by 1/16^(i%8), return sum(x)
 template <typename T>
 inline float load_x32(const device T* xp, thread float* xs) {
@@ -111,7 +116,7 @@ GATE_UP_SRC = """
     }
     for (uint r = 0; r < R; ++r) {
         float g = simd_sum(ag[r]), u = simd_sum(au[r]);
-        if (lane == 0) h[slot * F + row0 + r] = T(g / (1.f + metal::exp(-g)) * u);
+        if (lane == 0) h[slot * F + row0 + r] = T(glu_act<ACT>(g) * u);
     }
 """
 
@@ -195,8 +200,8 @@ GATE_UP_E_SRC = MMA_HEAD.replace("%SMALL%", """    if (n == 2 && NSMALL >= 2) { 
             float g = simd_sum(ga[r]), u = simd_sum(ua[r]);
             float g2 = simd_sum(gb_[r]), u2 = simd_sum(ub_[r]);
             if (lane == 0) {
-                h[sa * F + rw0 + r] = T(g / (1.f + metal::exp(-g)) * u);
-                h[sb * F + rw0 + r] = T(g2 / (1.f + metal::exp(-g2)) * u2);
+                h[sa * F + rw0 + r] = T(glu_act<ACT>(g) * u);
+                h[sb * F + rw0 + r] = T(glu_act<ACT>(g2) * u2);
             }
         }
         return;
@@ -220,7 +225,7 @@ GATE_UP_E_SRC = MMA_HEAD.replace("%SMALL%", """    if (n == 2 && NSMALL >= 2) { 
             }
             for (uint r = 0; r < RS; ++r) {
                 float g = simd_sum(ag[r]), u = simd_sum(au[r]);
-                if (lane == 0) h[slot * F + rw0 + r] = T(g / (1.f + metal::exp(-g)) * u);
+                if (lane == 0) h[slot * F + rw0 + r] = T(glu_act<ACT>(g) * u);
             }
         }
         return;
@@ -265,7 +270,7 @@ GATE_UP_E_SRC = MMA_HEAD.replace("%SMALL%", """    if (n == 2 && NSMALL >= 2) { 
     for (uint i = 0; i < 2; ++i) {
         float g = 0.f, u = 0.f;
         for (uint j = 0; j < SGK; ++j) { g += red[j * 128 + lane * 2 + i]; u += red[j * 128 + 64 + lane * 2 + i]; }
-        if (fn + i < n) h[(i ? s1 : s0) * F + row0 + fm] = T(g / (1.f + metal::exp(-g)) * u);
+        if (fn + i < n) h[(i ? s1 : s0) * F + row0 + fm] = T(glu_act<ACT>(g) * u);
     }
 """
 
@@ -394,11 +399,11 @@ def dequant(s):
     return tuple(mx.dequantize(*s[n], group_size=GS, bits=BITS) for n in ("g", "u", "d"))
 
 
-def run(s, x, idx, wts):
+def run(s, x, idx, wts, act=0):
     T, k = idx.shape
     (gq, gs, gb), (uq, us, ub), (dq, ds, db) = s["g"], s["u"], s["d"]
     F, D = gq.shape[1], dq.shape[1]
-    base = [("T", x.dtype), ("S", gs.dtype), ("D", D), ("F", F), ("K", k), ("GS", GS)]
+    base = [("T", x.dtype), ("S", gs.dtype), ("D", D), ("F", F), ("K", k), ("GS", GS), ("ACT", act)]
     if T > 1:
         # The raw-code MMA path subtracts OFF*s*sum(x) with sum(x) taken from the unrounded input; for fp32
         # inputs the MMA operands are rounded to half, so the cancellation error is amplified ~1024x

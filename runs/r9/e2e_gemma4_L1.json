@@ -1,0 +1,41 @@
+{
+ "args": {
+  "model": "mlx-community/gemma-4-26b-a4b-it-4bit",
+  "variant": "moelab/variants/mlx/metal_q4_moe.py",
+  "tokens": 512,
+  "rounds": 3,
+  "quality": false,
+  "quality_text": null,
+  "draft": null,
+  "num_draft": 3,
+  "max_t": 256,
+  "out": "runs/r9/e2e_gemma4_L1.json",
+  "fused_router": false,
+  "context": 0,
+  "verify_chunks": null
+ },
+ "stock": [
+  70.69360645380104,
+  70.64872623668352,
+  70.5020711359296
+ ],
+ "variant": [
+  76.70232677375931,
+  76.6104351354386,
+  76.48895050802196
+ ],
+ "speedup": 1.08438522838731,
+ "tokens_identical": 484,
+ "first_diff": 0,
+ "len_stock": 512,
+ "len_variant": 512,
+ "guard": {
+  "key": "Apple M4 Pro|battery",
+  "probe_ref_gbs": 236.60911915379472,
+  "probe_min_gbs": 227.33913424095104,
+  "probe_ratio": 0.9608215230841621,
+  "status": "ok",
+  "contended": false,
+  "history": 36
+ }
+}

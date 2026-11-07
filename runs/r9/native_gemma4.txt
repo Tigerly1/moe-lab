@@ -1,0 +1,31 @@
+<bos><|turn>system
+<|think|>
+<turn|>
+<|turn>user
+Explain how a mixture-of-experts transformer layer routes tokens to experts, why it saves compute, and what problems appear when serving it on a laptop GPU.<turn|>
+<|turn>model
+<|channel>thought
+
+*   Mixture-of-Experts (MoE) Transformer layers.
+*   Mechanism: How tokens are routed to experts.
+*   Efficiency: Why it saves compute.
+*   Hardware constraints: Problems when serving on a laptop GPU.
+
+    *   *Concept:* Instead of one giant Feed-Forward Network (FFN) layer, we have many smaller "expert" FFNs.
+    *   *The Router (Gating Network):* A learnable linear layer that takes the input token embedding and outputs a probability distribution over experts.
+    *   *The Process:*
+        1.  Input $x$ enters the router.
+        2.  Router calculates scores $W_g \cdot x$.
+        3.  Apply Softmax (often with "Top-k" selection, e.g., Top-1 or Top-2).
+        4.  The selected experts process the token.
+        5.  The outputs are weighted by the router scores and summed.
+    s*   *Key term:* Sparsity.
+
+    *   *The "Sparse" vs. "Dense" distinction:* In a dense model, every parameter is used for every token. In MoE, only a fraction of parameters are used.
+    *   *FLOPs vs. Parameters:*
+        *   Total parameters = Sum of all experts + router.
+        *   Active parameters (per token) = Router + selected experts.
+    *   *The Math:* If you have 8 experts and use 2, you've effectively reduced the compute cost of the FFN part by roughly 4x (depending on the architecture), while keeping the capacity of a much larger model.
+    *   *Scaling:* It allows for massive model capacity (knowledge storage) without a linear increase in inference latency/FLOPs.
+
+    *   *Memory vs. Compute

@@ -46,13 +46,14 @@ def custom_wins(T, k, E, D, F):
     return load <= 4
 
 
-def run(s, x, idx, wts):
+def run(s, x, idx, wts, act=0):
+    """act: 0 = SwiGLU (silu(gate) * up), 1 = GeGLU with tanh-GELU (Gemma-4)."""
     T, k = idx.shape
     if T == 1:
-        return _v4.run(s, x, idx, wts)
+        return _v4.run(s, x, idx, wts, act)
     E, F, D = s["g"][0].shape[0], s["g"][0].shape[1], s["d"][0].shape[1]
     if not custom_wins(T, k, E, D, F):
-        return gather_moe(s, x, idx, wts, GS, BITS)
+        return gather_moe(s, x, idx, wts, GS, BITS, act=act)
     if D % 128 == 0 and F % 128 == 0 and x.dtype in (mx.bfloat16, mx.float16):
-        return _mma.run(s, x, idx, wts)   # fp32 activations -> scalar tiles (exact), see tiles_v2 note
-    return _tb.run(s, x, idx, wts)
+        return _mma.run(s, x, idx, wts, act)   # fp32 activations -> scalar tiles (exact), see tiles_v2 note
+    return _tb.run(s, x, idx, wts, act)

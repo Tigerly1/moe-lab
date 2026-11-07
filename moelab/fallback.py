@@ -9,11 +9,12 @@ gather_moe() reproduces mlx-lm's SwitchGLU path (sort when >= 64 slots) on our s
 fallback is the baseline itself, never something slower.
 """
 import mlx.core as mx
+import mlx.nn as nn
 from mlx_lm.models.activations import swiglu
 from mlx_lm.models.switch_layers import _gather_sort, _scatter_unsort
 
 
-def gather_moe(s, x, idx, wts, group_size, bits, mode="affine"):
+def gather_moe(s, x, idx, wts, group_size, bits, mode="affine", act=0):
     xx = mx.expand_dims(x, (-2, -3))
     do_sort = idx.size >= 64
     ii, inv = idx, None
@@ -25,7 +26,9 @@ def gather_moe(s, x, idx, wts, group_size, bits, mode="affine"):
         return mx.gather_qmm(z, w[0], w[1], w[2] if len(w) > 2 else None, rhs_indices=ii, transpose=True,
                              group_size=group_size, bits=bits, mode=mode, sorted_indices=do_sort)
 
-    y = mm(swiglu(mm(xx, "g"), mm(xx, "u")), "d")   # swiglu(gate, x) = silu(gate) * x
+    g, u = mm(xx, "g"), mm(xx, "u")
+    # act 0: swiglu(gate, x) = silu(gate) * x; act 1: Gemma-4 geglu = gelu_approx(gate) * x
+    y = mm(swiglu(g, u) if act == 0 else nn.gelu_approx(g) * u, "d")
     if do_sort:
         y = _scatter_unsort(y, inv, idx.shape)
     return (y.squeeze(-2) * wts.astype(x.dtype)[..., None]).sum(axis=-2)

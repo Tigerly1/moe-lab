@@ -1,0 +1,35 @@
+{
+ "args": {
+  "model": "mlx-community/gemma-4-26b-a4b-it-4bit",
+  "variant": "moelab/variants/mlx/metal_q4_moe.py",
+  "tokens": 256,
+  "rounds": 3,
+  "quality": true,
+  "draft": null,
+  "num_draft": 3,
+  "max_t": 256,
+  "out": "runs/r9/quality_gemma4.json",
+  "fused_router": false,
+  "context": 0,
+  "verify_chunks": null
+ },
+ "ppl": {
+  "stock": 306.629182475422,
+  "variant": 314.7842493782269,
+  "fp32": 282.61168726108093
+ },
+ "pairs": {
+  "stock_vs_fp32": {
+   "top1_agreement": 0.8147818343722173,
+   "mean_abs_dnll": 0.7480768163822001
+  },
+  "variant_vs_fp32": {
+   "top1_agreement": 0.8281389136242209,
+   "mean_abs_dnll": 0.6711298041543255
+  },
+  "stock_vs_variant": {
+   "top1_agreement": 0.7934105075690115,
+   "mean_abs_dnll": 0.8420855992623768
+  }
+ }
+}

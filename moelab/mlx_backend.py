@@ -45,8 +45,9 @@ def make_inputs(shape, T, dtype, routing, seed):
     return out
 
 
-def reference(wg, wu, wd, x, idx, wts):
-    """fp32 per-expert loop. Ground truth for the GPU (validated vs numpy fp64 in tests)."""
+def reference(wg, wu, wd, x, idx, wts, act=0):
+    """fp32 per-expert loop. Ground truth for the GPU (validated vs numpy fp64 in tests).
+    act 0: silu(gate) * up (SwiGLU); act 1: tanh-GELU(gate) * up (Gemma-4 GeGLU)."""
     x32 = x.astype(mx.float32)
     T, d = x.shape
     y = mx.zeros((T, d), dtype=mx.float32)
@@ -57,7 +58,8 @@ def reference(wg, wu, wd, x, idx, wts):
         xe = x32[t_mx]
         g = xe @ wg[int(e)].astype(mx.float32).T
         u = xe @ wu[int(e)].astype(mx.float32).T
-        o = (g * mx.sigmoid(g) * u) @ wd[int(e)].astype(mx.float32).T
+        a = g * mx.sigmoid(g) if act == 0 else 0.5 * g * (1 + mx.tanh(0.7978845608028654 * (g + 0.044715 * g ** 3)))
+        o = (a * u) @ wd[int(e)].astype(mx.float32).T
         y = y.at[t_mx].add(o * wts[t_mx, mx.array(j)][:, None])
     mx.eval(y)
     return y

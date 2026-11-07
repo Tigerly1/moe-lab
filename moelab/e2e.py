@@ -31,6 +31,8 @@ def patch(model, mod):
         return _patch_gptoss(model, mod)
     if getattr(model, "model_type", None) in ("deepseek_v2", "deepseek_v3"):
         return _patch_deepseek(model, mod)
+    if getattr(model, "model_type", None) in ("gemma4", "gemma4_text"):
+        return _patch_gemma4(model, mod)
     blocks = [l.mlp for l in model.layers if hasattr(l.mlp, "switch_mlp")]
     cls = type(blocks[0])
     stock = cls.__dict__.get("_stock_call", cls.__call__)  # idempotent re-patching
@@ -55,10 +57,53 @@ def patch(model, mod):
             if self.norm_topk_prob:
                 scores /= mx.sum(scores, axis=-1, keepdims=True)
         y = mod.run(self._variant_state, x.reshape(T, -1), inds.reshape(T, k),
-                    scores.reshape(T, k).astype(mx.float32))
-        return y.reshape(x.shape)
+                    scores.reshape(T, k).astype(mx.float32)).reshape(x.shape)
+        if getattr(self, "shared_expert", None) is not None:   # Qwen3-Next / Qwen3.5-MoE: gated shared expert, stock
+            assert getattr(self, "sharding_group", None) is None, "tensor-parallel MoE not supported by the patch"
+            y = y + mx.sigmoid(self.shared_expert_gate(x)) * self.shared_expert(x)
+        return y
 
     cls.__call__ = call
+    return cls, len(blocks)
+
+
+def _patch_gemma4(model, mod):
+    """Gemma-4 MoE layers: the stock Router (rms_norm, proj, top-k, softmax over the top-k, per-expert scale)
+    runs unchanged; the Experts module (SwitchGLU with GeGLU, tanh-GELU) is replaced by `mod.run(..., act=1)`."""
+    blocks = [l.experts for l in model.layers if getattr(l, "enable_moe", False)]
+    cls = type(blocks[0])
+    stock = cls.__dict__.get("_stock_call", cls.__call__)
+    cls._stock_call = stock
+    for b in blocks:
+        sw = b.switch_glu
+        for p in (sw.gate_proj, sw.up_proj, sw.down_proj):
+            assert p.group_size == mod.GS and p.bits == mod.BITS, "format mismatch"
+        b._variant_state = {n: (p.weight, p.scales, p.biases) for n, p in
+                            (("g", sw.gate_proj), ("u", sw.up_proj), ("d", sw.down_proj))}
+
+    def call(self, x, inds, w):
+        T = x.size // x.shape[-1]
+        if T > MAX_T or not getattr(cls, "_use_variant", False):
+            return stock(self, x, inds, w)
+        k = inds.shape[-1]
+        return mod.run(self._variant_state, x.reshape(T, -1), inds.reshape(T, k),
+                       w.reshape(T, k).astype(mx.float32), act=1).reshape(x.shape)
+
+    cls.__call__ = call
+    # Router: top-k on raw logits, softmax over the top-k, times per-expert scale = topk_norm(norm=True) * scale
+    rcls = type(next(l.router for l in model.layers if getattr(l, "enable_moe", False)))
+    rstock = rcls.__dict__.get("_stock_call", rcls.__call__)
+    rcls._stock_call = rstock
+
+    def rcall(self, x):
+        T = x.size // x.shape[-1]
+        if not (FUSED_ROUTER and getattr(cls, "_use_variant", False)) or T > MAX_T:
+            return rstock(self, x)
+        x = mx.fast.rms_norm(x, self.scale * self._root_size, self.eps)
+        inds, w = topk_norm(self.proj(x), self.config.top_k_experts)
+        return inds, w * self.per_expert_scale[inds]
+
+    rcls.__call__ = rcall
     return cls, len(blocks)
 
 
@@ -157,9 +202,9 @@ def teacher_forced(model, tok, cls, text, use_variant):
     return np.array(nll), np.array(top)
 
 
-def quality_check(model, tok, cls, variant_path):
+def quality_check(model, tok, cls, variant_path, text_path=None):
     """Stock vs variant vs fp32 truth (same dequantized weights), teacher-forced."""
-    text = open(__file__.replace("e2e.py", "data/quality_corpus.txt")).read()[:3000]  # frozen corpus (audit fix)
+    text = open(text_path or __file__.replace("e2e.py", "data/quality_corpus.txt")).read()[:3000]  # frozen corpus (audit fix)
     var_mod = load_variant(variant_path)
     if getattr(model, "model_type", None) == "gpt_oss":  # fp32 truth with biases + clamped SwiGLU
         truth_mod = SimpleNamespace(state=var_mod.state, run=var_mod.reference)
@@ -228,11 +273,14 @@ def main():
     ap.add_argument("--tokens", type=int, default=256)
     ap.add_argument("--rounds", type=int, default=3)
     ap.add_argument("--quality", action="store_true", help="teacher-forced PPL comparison only")
+    ap.add_argument("--quality-text", default=None, help="text file for --quality instead of the frozen corpus "
+                    "(model-native text for IT models, scripts/r9_native_text.py)")
     ap.add_argument("--draft", default=None, help="draft model for speculative decoding (verify T = num_draft+1)")
     ap.add_argument("--num-draft", type=int, default=3)
     ap.add_argument("--max-t", type=int, default=MAX_T, help="use the variant for calls with <= this many tokens")
     ap.add_argument("--out", default=None)
     ap.add_argument("--fused-router", action="store_true", help="fused top-k/normalize router tail (moelab/router.py)")
+    ap.add_argument("--chat", action="store_true", help="wrap PROMPT in the model's chat template")
     ap.add_argument("--context", type=int, default=0, help="prompt of this many tokens (frozen corpus, repeated) before decoding")
     ap.add_argument("--verify-chunks", type=int, nargs="*", default=None,
                     help="acceptance-free verify benchmark with these chunk sizes, e.g. 1 2 4 7 16")
@@ -244,7 +292,7 @@ def main():
     cls, n = patch(model, load_variant(a.variant))
     print(f"patched {n} MoE blocks with {a.variant}")
     if a.quality:
-        q = quality_check(model, tok, cls, a.variant)
+        q = quality_check(model, tok, cls, a.variant, a.quality_text)
         if a.out:
             json.dump({"args": vars(a), **q}, open(a.out, "w"), indent=1)
         return
@@ -257,6 +305,8 @@ def main():
     if a.context:
         ids = tok.encode(open(__file__.replace("e2e.py", "data/quality_corpus.txt")).read())
         ctx_prompt = (ids * (a.context // len(ids) + 1))[:a.context]
+    if a.chat:   # instruction-tuned models: the raw PROMPT puts e.g. Gemma-4-IT into a degenerate "-----" loop
+        ctx_prompt = tok.apply_chat_template([{"role": "user", "content": PROMPT}], add_generation_prompt=True, tokenize=False)
     res = {"stock": [], "variant": []}
     outs = {}
     from .guard import probe, verdict, report

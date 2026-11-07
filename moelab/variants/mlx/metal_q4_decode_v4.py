@@ -34,6 +34,11 @@ SG_PER_TG = 4
 ITERS = 3  # target uint4 chunks per lane in the down kernel
 
 HEADER = """
+// GLU activation on the gate (ACT 0 = SiLU as mlx-lm swiglu, 1 = tanh-GELU as nn.gelu_approx, Gemma-4 geglu)
+template <int A> inline float glu_act(float g) {
+    if (A == 1) return 0.5f * g * (1.f + metal::precise::tanh(0.7978845608028654f * (g + 0.044715f * g * g * g)));
+    return g / (1.f + metal::exp(-g));
+}
 // load 32 activations, prescale by 1/16^(i%8), return sum(x)
 template <typename T>
 inline float load_x32(const device T* xp, thread float* xs) {
@@ -83,7 +88,7 @@ GATE_UP_SRC = """
     }
     for (uint r = 0; r < R; ++r) {
         float g = simd_sum(ag[r]), u = simd_sum(au[r]);
-        if (lane == 0) h[slot * F + row0 + r] = T(g / (1.f + metal::exp(-g)) * u);
+        if (lane == 0) h[slot * F + row0 + r] = T(glu_act<ACT>(g) * u);
     }
 """
 
@@ -155,11 +160,11 @@ def dequant(s):
     return tuple(mx.dequantize(*s[n], group_size=GS, bits=BITS) for n in ("g", "u", "d"))
 
 
-def run(s, x, idx, wts):
+def run(s, x, idx, wts, act=0):
     T, k = idx.shape
     (gq, gs, gb), (uq, us, ub), (dq, ds, db) = s["g"], s["u"], s["d"]
     F, D = gq.shape[1], dq.shape[1]
-    base = [("T", x.dtype), ("S", gs.dtype), ("D", D), ("F", F), ("K", k), ("GS", GS)]
+    base = [("T", x.dtype), ("S", gs.dtype), ("D", D), ("F", F), ("K", k), ("GS", GS), ("ACT", act)]
     h = _k1(inputs=[x, gq, gs, gb, uq, us, ub, idx], template=base + [("R", R_UP)],
             grid=(32 * F // R_UP, T * k, 1), threadgroup=(32 * SG_PER_TG, 1, 1),
             output_shapes=[(T * k, F)], output_dtypes=[x.dtype])[0]

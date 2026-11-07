@@ -19,13 +19,21 @@ VARIANTS = {  # (model_type, expert quant mode) -> kernel file
     ("qwen3_moe", "affine"): "variants/mlx/metal_q4_moe.py",
     ("gpt_oss", "mxfp4"): "variants/mlx/metal_mxfp4_gptoss.py",
     ("deepseek_v2", "affine"): "variants/mlx/metal_q4_moe.py",
+    ("qwen3_5_moe", "affine"): "variants/mlx/metal_q4_moe.py",   # Qwen3.5/3.6-35B-A3B (round 9)
+    ("gemma4", "affine"): "variants/mlx/metal_q4_moe.py",        # Gemma-4-26B-A4B, GeGLU (round 9)
+    ("gemma4_text", "affine"): "variants/mlx/metal_q4_moe.py",
 }
+
+
+def _experts(layer):
+    m = getattr(layer, "mlp", None)
+    return (getattr(m, "switch_mlp", None) or getattr(m, "experts", None)
+            or getattr(getattr(layer, "experts", None), "switch_glu", None))   # Gemma-4: layer.experts.switch_glu
 
 
 def pick_variant(model):
     mtype = getattr(model, "model_type", None) or model.args.model_type
-    sw = next(getattr(l.mlp, "switch_mlp", None) or getattr(l.mlp, "experts", None) for l in model.layers
-              if hasattr(l.mlp, "switch_mlp") or hasattr(l.mlp, "experts"))
+    sw = next(e for e in map(_experts, model.layers) if e is not None)
     mode = getattr(sw.gate_proj, "mode", "affine")
     key = (mtype, mode)
     if key not in VARIANTS:

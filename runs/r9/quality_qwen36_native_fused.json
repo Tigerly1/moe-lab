@@ -1,0 +1,46 @@
+{
+ "args": {
+  "model": "mlx-community/Qwen3.6-35B-A3B-4bit",
+  "variant": "moelab/variants/mlx/metal_q4_moe.py",
+  "tokens": 256,
+  "rounds": 3,
+  "quality": true,
+  "quality_text": "runs/r9/native_qwen36.txt",
+  "draft": null,
+  "num_draft": 3,
+  "max_t": 256,
+  "out": "runs/r9/quality_qwen36_native_fused.json",
+  "fused_router": true,
+  "chat": false,
+  "context": 0,
+  "verify_chunks": null
+ },
+ "ppl": {
+  "stock": 2.0089498229090084,
+  "variant": 2.028461746810961,
+  "fp32": 2.0293908007302557,
+  "fp32_exact": 2.0303796993217778
+ },
+ "pairs": {
+  "stock_vs_fp32": {
+   "top1_agreement": 0.981859410430839,
+   "mean_abs_dnll": 0.02574863563589498
+  },
+  "variant_vs_fp32": {
+   "top1_agreement": 0.9727891156462585,
+   "mean_abs_dnll": 0.036029601583675464
+  },
+  "stock_vs_variant": {
+   "top1_agreement": 0.9750566893424036,
+   "mean_abs_dnll": 0.0340728348885534
+  },
+  "stock_vs_fp32_exact": {
+   "top1_agreement": 0.9841269841269841,
+   "mean_abs_dnll": 0.03209368387858073
+  },
+  "variant_vs_fp32_exact": {
+   "top1_agreement": 0.9795918367346939,
+   "mean_abs_dnll": 0.027400449290026885
+  }
+ }
+}
