@@ -1,6 +1,9 @@
 fastapi==0.162.0
-mlx==0.32.4
+jax==0.6.2
+jaxlib==0.6.2
+matplotlib==3.10.9
 mlx-lm==0.31.3
+mlx==0.32.4
 modal==1.6.3
 numpy==2.2.6
 pytest==9.2.0
