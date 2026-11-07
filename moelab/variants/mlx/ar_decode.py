@@ -25,6 +25,8 @@ BITS, GS = 4, 64
 W_BITS = BITS + 32 / GS
 R_UP, R_DOWN = 1, 2  # tuned on M4 Pro, T=1 (scan: R_UP=1 best on all shapes)
 SG_PER_TG = 4
+ITERS = 3  # target uint4 chunks per lane in the down kernel
+ITERS = 3  # target uint4 chunks per lane in the down kernel
 
 HEADER = """
 // load 32 activations, prescale by 1/16^(i%8), return sum(x)
@@ -81,15 +83,25 @@ GATE_UP_SRC = """
 """
 
 DOWN_SRC = """
+    // threadgroup = (32, K): simdgroup j computes the rows of slot t*K+j; the K partials
+    // are reduced in threadgroup memory and written to y[t] (no combine dispatch).
+    // LPR lanes per row group (32/LPR groups of R rows per simdgroup) keeps all 32 lanes
+    // busy when F/32 chunks < 32 (e.g. F=768: 24 chunks).
+    constexpr uint RB = R * 32 / LPR;  // rows per simdgroup
     uint lane = thread_index_in_simdgroup;
-    uint row0 = (thread_position_in_grid.x / 32) * R;
-    uint slot = thread_position_in_grid.y;
-    if (row0 >= D) return;
+    uint sub = lane % LPR;
+    uint j = thread_position_in_threadgroup.y;
+    uint rb0 = (thread_position_in_grid.x / 32) * RB;
+    uint row0 = rb0 + (lane / LPR) * R;
+    uint t = thread_position_in_grid.y / K;
+    uint slot = t * K + j;
+    bool ok = row0 < D;
     constexpr uint NW = F / 8, NG = F / GS;
-    size_t r0 = (size_t)idx[slot] * D + row0;
+    threadgroup float buf[K][RB];
+    size_t r0 = (size_t)idx[slot] * D + (ok ? row0 : 0);
     float acc[R] = {0.f};
     float hs[32];
-    for (uint c = lane; c < NW / 4; c += 32) {
+    for (uint c = sub; ok && c < NW / 4; c += LPR) {
         float hsum = load_x32(h + slot * F + c * 32, hs);
         uint grp = (c * 32) / GS;
         for (uint r = 0; r < R; ++r) {
@@ -100,30 +112,45 @@ DOWN_SRC = """
     }
     float w = wts[slot];
     for (uint r = 0; r < R; ++r) {
-        float a = simd_sum(acc[r]);
-        if (lane == 0) y[slot * D + row0 + r] = w * a;
+        float a = acc[r];
+        for (uint o = LPR / 2; o > 0; o >>= 1) a += simd_shuffle_xor(a, o);
+        if (sub == 0) buf[j][(lane / LPR) * R + r] = w * a;
+    }
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    uint tid = j * 32 + lane;
+    if (tid < RB && rb0 + tid < D) {
+        float a = 0.f;
+        for (uint q = 0; q < K; ++q) a += buf[q][tid];
+        y[t * D + rb0 + tid] = T(a);
     }
 """
 
-COMBINE_SRC = """
-    uint i = thread_position_in_grid.x;            // over T*D
-    if (i >= NT * D) return;
-    uint t = i / D, r = i % D;
-    float a = 0.f;
-    for (uint j = 0; j < K; ++j) a += yp[(t * K + j) * D + r];
-    y[i] = T(a);
-"""
-_k3 = mx.fast.metal_kernel(name="ar_decode_combine", input_names=["yp"], output_names=["y"], source=COMBINE_SRC)
 
 _k1 = mx.fast.metal_kernel(name="ar_decode_gate_up", input_names=["x", "gq", "gs", "gb", "uq", "us", "ub", "idx"],
                            output_names=["h"], source=GATE_UP_SRC, header=HEADER)
-_k2 = mx.fast.metal_kernel(name="ar_decode_down", input_names=["h", "dq", "ds", "db", "idx", "wts"],
+_k2 = mx.fast.metal_kernel(name="ar_decode_down_lpr", input_names=["h", "dq", "ds", "db", "idx", "wts"],
                            output_names=["y"], source=DOWN_SRC, header=HEADER)
+
+
+def _lpr(chunks):
+    """lanes per row: smallest power of 2 >= chunks / ITERS, capped at 32."""
+    l = 1
+    while l < 32 and l * ITERS < chunks:
+        l *= 2
+    return l
+
+
+def _lpr(chunks):
+    """lanes per row: smallest power of 2 >= chunks / ITERS, capped at 32."""
+    l = 1
+    while l < 32 and l * ITERS < chunks:
+        l *= 2
+    return l
 
 
 def prepare(w_gate, w_up, w_down):
     E, f, d = w_gate.shape
-    assert d % 32 == 0 and f % 32 == 0 and f % R_UP == 0 and d % R_DOWN == 0, "shape constraints"
+    assert d % 32 == 0 and f % 32 == 0 and f % R_UP == 0, "shape constraints"
     return {n: mx.quantize(w, group_size=GS, bits=BITS) for n, w in (("g", w_gate), ("u", w_up), ("d", w_down))}
 
 
@@ -139,9 +166,10 @@ def run(s, x, idx, wts):
     h = _k1(inputs=[x, gq, gs, gb, uq, us, ub, idx], template=base + [("R", R_UP)],
             grid=(32 * F // R_UP, T * k, 1), threadgroup=(32 * SG_PER_TG, 1, 1),
             output_shapes=[(T * k, F)], output_dtypes=[x.dtype])[0]
-    yp = _k2(inputs=[h, dq, ds, db, idx, wts.flatten()], template=base + [("R", R_DOWN)],
-             grid=(32 * D // R_DOWN, T * k, 1), threadgroup=(32 * SG_PER_TG, 1, 1),
-             output_shapes=[(T * k, D)], output_dtypes=[mx.float32])[0]
-    return _k3(inputs=[yp], template=[("T", x.dtype), ("D", D), ("K", k), ("NT", T)],
-               grid=(T * D, 1, 1), threadgroup=(256, 1, 1),
+    lpr = _lpr(F // 32)
+    rows_per_sg = R_DOWN * 32 // lpr
+    lpr = _lpr(F // 32)
+    rb = R_DOWN * 32 // lpr
+    return _k2(inputs=[h, dq, ds, db, idx, wts.flatten()], template=base + [("R", R_DOWN), ("LPR", lpr)],
+               grid=(32 * (-(-D // rb)), T * k, 1), threadgroup=(32, k, 1),
                output_shapes=[(T, D)], output_dtypes=[x.dtype])[0]
