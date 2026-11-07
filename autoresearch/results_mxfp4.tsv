@@ -1,0 +1,19 @@
+commit	score	per_point	status	description
+fead5a3	0.9997	gptT1=0.999 gptT2=0.999 gptT4=0.997 gptT8=1.000 qwen3T1=1.004 qwen3T4=1.000 qwen3T16=0.999	keep	baseline = mlx-lm mxfp4 wrapper
+b6887d8	0.93(probe)	gptT1=1.167 gptT2=0.710 gptT4=0.718 gptT8=0.797 qwen3T1=1.282 qwen3T4=0.909 qwen3T16=1.030	probe-discard	v4-port T=1 + expert-tiled scalar GEMV T>1 (probe only, not bench)
+af65e99	1.2318	gptT1=1.164 gptT2=1.166 gptT4=1.218 gptT8=1.268 qwen3T1=1.260 qwen3T4=1.375 qwen3T16=1.186	keep	v4-port fp4 GEMV (half bit-trick decode) for all T, 2 dispatches
+-	probe	gptT1=1.153 gptT2=1.159 gptT4=1.191 gptT8=1.174 qwen3T1=1.282 qwen3T4=1.287 qwen3T16=1.103	probe-discard	half2 math dot (x as half, fp4 x2^14 hmul): no gain, Apple half2 ~ 2 scalar ops
+-	probe	gptT1=0.719 gptT2=0.682 gptT4=0.663 gptT8=0.646 qwen3T1=0.845 qwen3T4=0.729 qwen3T16=0.599	probe-discard	256-entry float2 byte LUT in threadgroup memory: 1.6x slower (bank conflicts)
+-	probe	~flat	probe-discard	knob sweep R_UP=2, R_DOWN=1/4, SG_PER_TG=2/8, vec x loads: all within noise
+-	probe	gptT2=0.641..0.959 qwen3T16=0.78..1.05	probe-discard	expert-tiled (map+tile+combine) word-per-lane and uint4 variants VT=1..4: all slower than per-slot GEMV
+b5ee026	1.2968	gptT1=1.163 gptT2=1.166 gptT4=1.223 gptT8=1.416 qwen3T1=1.264 qwen3T4=1.516 qwen3T16=1.371	keep	T>1 gate/up: in-kernel pairing of same-expert slots (rank parity), dot2 shared decode
+5ad6620	1.3279	gptT1=1.163 gptT2=1.159 gptT4=1.226 gptT8=1.478 qwen3T1=1.261 qwen3T4=1.592 qwen3T16=1.486	keep	T>1 down: paired slots (shared decode) writing fp32 per slot + combine kernel
+5b845d3	1.3833	gptT1=1.166 gptT2=1.130 gptT4=1.202 gptT8=1.527 qwen3T1=1.265 qwen3T4=1.536 qwen3T16=2.062	keep*	T>1: map prepass + groups<=8 (GEMV/dot2/simdgroup MMA), RT=16 up/32 down (run1 1.3806, rerun 1.3833). *Should have been discarded: qwen3T4 -0.056 vs 5ad6620 (missed); superseded by 97e1ab9 which fixes it
+-	probe	qwen3T16 598	probe-discard	MMA: contiguous K split per simdgroup instead of strided: no change
+-	probe	qwen3T16 598	probe-discard	MMA: two accumulator chains (ILP): no change; half accumulators: no change
+-	probe	MMA-only qwen3T16: base 434, noscale 412, nodecode 363, nox 387, nomma 276	probe-diag	MMA path cost breakdown: MMA instr ~40%, fp4 decode ~17%, x/B loads ~12%
+-	probe	qwen3T16 584 gptT8 1144	probe-discard	scalar 4-slot path (16 weights/lane step) for groups of 3-4: <3% gain, extra code
+-	probe	qwen3T16 605..676	probe-discard	groups <= NS=3/4/6 as scalar pairs instead of MMA: worse
+-	probe	~flat	probe-discard	h as fp16 internal (cheaper B loads), RR_UP=2/4 rows per lane in scalar T>1 path: no gain
+97e1ab9	1.3976	gptT1=1.163 gptT2=1.158 gptT4=1.226 gptT8=1.519 qwen3T1=1.269 qwen3T4=1.588 qwen3T16=2.061	keep	hybrid: pair kernels (5ad6620) for 1<T<8, grouped map+MMA path for T>=8 (no point regresses vs 5ad6620)
+-	probe	gptT1=0.468 ... qwen3T16=1.256 (and incorrect at tails)	probe-discard	16-entry LUT held in lanes, decode via simd_shuffle: 2.2x slower
