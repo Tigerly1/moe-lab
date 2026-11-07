@@ -73,10 +73,10 @@ a{color:var(--accent)}
 </header>
 
 <div class="kpis">
-  <div class="kpi"><b>+7.0%</b><span>end-to-end decode tok/s, Qwen3-30B-A3B-4bit, AC power (89.9 → 96.1)</span></div>
-  <div class="kpi"><b>1.17×</b><span>MoE layer at T=1 vs the real mlx-lm path, 95% CI 1.16–1.18</span></div>
-  <div class="kpi"><b>2.36×</b><span>layer at T=32 consecutive tokens (real routing), MMA kernel</span></div>
-  <div class="kpi"><b>+21.6%</b><span>speculative decoding (6 draft tokens): 63.5 → 77.2 tok/s</span></div>
+  <div class="kpi"><b>+9.2%</b><span>end-to-end decode, Qwen3-30B-A3B-4bit, AC: 91.5 → 99.9 tok/s</span></div>
+  <div class="kpi"><b>98.5%</b><span>of the measured memory-bandwidth floor at T=1 (mlx-lm: 79%)</span></div>
+  <div class="kpi"><b>+40%</b><span>full-model verify step of 16 tokens, same text both arms (194 → 272 tok/s)</span></div>
+  <div class="kpi"><b>2.36×</b><span>MoE layer at T=32 consecutive tokens (real routing), MMA kernel</span></div>
 </div>
 
 <section>
@@ -102,14 +102,15 @@ a{color:var(--accent)}
 
 <section>
   <h2>2. How close are we to the hardware?</h2>
-  <p class="prose">The datasheet says 273 GB/s. A read-only kernel measured 240–250 GB/s (copy: 224). Measured against that real ceiling, our kernel at T=1 reaches 74% on Qwen3 (small experts) and about 88% on Mixtral (large experts). The gap on small experts is fixed cost per dispatch, which autoresearch round 2 is attacking.</p>
+  <p class="prose">The datasheet says 273 GB/s; a read-only kernel measured 240–250 GB/s (copy: 224). Per-call time comes from the slope of total time vs chain length (10 to 80 calls), which removes the 130–340 µs fixed cost of every eval. On that basis our T=1 kernel reads memory at the hardware limit on all three shapes. Stock mlx-lm reaches 79% on Qwen3.</p>
   <div class="tbl"><table>
-    <thead><tr><th>T=1, bf16, int4 g64</th><th>floor @250 GB/s</th><th>mlx-lm</th><th>ours</th><th>ours / ceiling</th><th>speedup [95% CI]</th></tr></thead>
+    <thead><tr><th>T=1, bf16, int4 g64, slope timing</th><th>floor @250 GB/s</th><th>mlx-lm</th><th>ours (v4)</th><th>ours / floor</th><th>speedup</th></tr></thead>
     <tbody>
-      <tr><td>Qwen3-30B-A3B (2048×768, E128 k8)</td><td>85 µs</td><td>133 µs</td><td>115 µs</td><td>74%</td><td>1.168 [1.163, 1.175]</td></tr>
-      <tr><td>gpt-oss-20b (2880×2880, E32 k4)</td><td>224 µs</td><td>293 µs</td><td>263 µs</td><td>85%</td><td>1.117 [1.101, 1.145]</td></tr>
-      <tr><td>Mixtral-8x7B (4096×14336, E8 k2)</td><td>793 µs</td><td>924 µs</td><td>898 µs</td><td>88%</td><td>1.029 [1.024, 1.034]</td></tr>
+      <tr><td>Qwen3-30B-A3B (2048×768, E128 k8)</td><td>85.1 µs</td><td>107.4 µs</td><td>86.4 µs</td><td>98.5%</td><td>1.244×</td></tr>
+      <tr><td>gpt-oss-20b (2880×2880, E32 k4)</td><td>224.2 µs</td><td>248.9 µs</td><td>225.8 µs</td><td>99.3%</td><td>1.102×</td></tr>
+      <tr><td>Mixtral-8x7B (4096×14336, E8 k2)</td><td>793.2 µs</td><td>801.8 µs</td><td>771.1 µs</td><td>102.9%</td><td>1.040×</td></tr>
     </tbody></table></div>
+  <p class="hand">Above 100% means the true ceiling is ~255–260 GB/s. At T=1 the only way left is fewer bytes.</p>
 </section>
 
 <section>
@@ -160,16 +161,23 @@ a{color:var(--accent)}
 
 <section>
   <h2>6. Does it hold end to end?</h2>
+  <p class="prose">Production dispatcher <code>metal_q4_moe</code>: the v4 GEMV at T=1, the MMA tile kernel at T&gt;1. The verify benchmark feeds the same fixed text through the full model in chunks, the way a speculative-decoding verify step does, so both arms do identical work.</p>
+  <div class="fig">
+    <div class="plot"><canvas id="cV" role="img" aria-label="Full-model throughput per verify chunk size, stock vs ours">Chunk 1: 74.5 vs 79.9; 2: 102.6 vs 110.2; 4: 124.4 vs 148.6; 7: 128.4 vs 167.6; 16: 193.8 vs 271.8 tok/s.</canvas></div>
+    <aside><p class="hand">The whole model, attention included: +19% at 4 tokens, +31% at 7, +40% at 16.</p><p class="hand">This is the regime where expert reuse pays.</p></aside>
+    <figcaption>Qwen3-30B-A3B-4bit, mlx-lm, AC power, 3 interleaved rounds per point.</figcaption>
+  </div>
   <div class="tbl"><table>
-    <thead><tr><th>Qwen3-30B-A3B-4bit, mlx-lm stream_generate</th><th>stock tok/s</th><th>ours tok/s</th><th>gain</th></tr></thead>
+    <thead><tr><th>Qwen3-30B-A3B-4bit, mlx-lm</th><th>stock tok/s</th><th>ours tok/s</th><th>gain</th></tr></thead>
     <tbody>
-      <tr><td>plain decode, battery, 256 tok × 3 rounds</td><td>85.3</td><td>91.3</td><td>+7.1%</td></tr>
-      <tr><td>plain decode, AC, 512 tok × 3 rounds</td><td>89.9</td><td>96.1</td><td>+7.0%</td></tr>
-      <tr><td>speculative, draft Qwen3-0.6B, 3 drafts (accept 0.53)</td><td>57.0</td><td>66.1</td><td>+16.0%</td></tr>
-      <tr><td>speculative, 6 drafts (accept 0.75)</td><td>63.5</td><td>77.2</td><td>+21.6%</td></tr>
+      <tr><td>plain decode, AC, 512 tok × 3 rounds (dispatcher)</td><td>91.5</td><td>99.9</td><td>+9.2%</td></tr>
+      <tr><td>plain decode, battery, 256 tok (v31, earlier)</td><td>85.3</td><td>91.3</td><td>+7.1%</td></tr>
+      <tr><td>speculative, 6 drafts, outputs identical 512/512</td><td>76.5</td><td>92.3</td><td>+20.8%</td></tr>
+      <tr class="lose"><td>speculative, 3 drafts, outputs diverge at token 22</td><td>71.8</td><td>67.4</td><td>confounded</td></tr>
     </tbody></table></div>
-  <p class="prose">Quality: teacher-forced perplexity on about 1000 tokens is 21.098 (stock) vs 21.102 (ours) vs 21.184 (fp32 experts). All three pairs disagree on top-1 about 4% of the time. That is the model's bf16 noise floor. Layer-level error vs fp32 is 2× lower for our kernel (3.5e-3 vs 6.9e-3).</p>
-  <p class="hand">Surprise: on this MoE, speculative decoding is slower than plain decoding, even with our kernel (77 vs 96 tok/s). Each verify step touches 20–30 experts instead of 8.</p>
+  <p class="hand">Pitfall: once the two arms generate different text, draft acceptance differs (0.63 vs 0.54) and tok/s no longer compares kernels. That is why the verify benchmark exists.</p>
+  <p class="prose">Quality: teacher-forced perplexity on a frozen 1000-token corpus is 21.17 (stock), 21.15 (ours) and 21.02 (fp32 experts). All pairs agree on top-1 95.8–96.2% of the time, which is the model's bf16 noise floor. Layer-level error vs fp32 is 2× lower for our kernel (3.5e-3 vs 6.9e-3).</p>
+  <p class="hand">Surprise: on this MoE, speculative decoding with a 0.6B draft is slower than plain decoding for stock MLX (72–77 vs 91.5 tok/s). With our kernel it is roughly break-even.</p>
 </section>
 
 <section>
@@ -241,6 +249,10 @@ a{color:var(--accent)}
       {label:'ratio, sampled rounds',data:S.map(p=>({x:p[0],y:p[1]})),borderColor:c.accent,backgroundColor:c.accent,pointRadius:2,borderWidth:1},
       {label:'median 1.168',data:[{x:0,y:1.168},{x:600,y:1.168}],borderColor:c.warm,borderDash:[6,4],pointRadius:0}]},
       options:Object.assign(so,{parsing:false})}));
+    charts.push(new Chart(document.getElementById('cV'),{type:'bar',data:{labels:['1','2','4','7','16'],datasets:[
+      {label:'stock mlx-lm',data:[74.5,102.6,124.4,128.4,193.8],backgroundColor:c.muted,borderRadius:3},
+      {label:'ours (dispatcher)',data:[79.9,110.2,148.6,167.6,271.8],backgroundColor:c.accent,borderRadius:3}]},
+      options:base(c,'tokens per verify step','tokens/s, full model',false)}));
     const dc=base(c,'speedup over mlx-lm at T=1 (%)','',false); dc.indexAxis='y'; dc.scales.x.stacked=true; dc.scales.y.stacked=true; dc.scales.x.max=20; dc.scales.y.title.display=false;
     charts.push(new Chart(document.getElementById('cDec'),{type:'bar',data:{labels:['Qwen3 (K=768)','gpt-oss (K=2880)','Mixtral (aligned)'],datasets:[
       {label:'fusion + fewer dispatches',data:[9.7,6.0,2.9],backgroundColor:c.accent,barThickness:26},
