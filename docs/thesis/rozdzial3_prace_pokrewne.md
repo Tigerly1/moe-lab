@@ -126,7 +126,7 @@ Wszystkie te systemy działają na GPU NVIDIA (CUDA, Triton) lub TPU (Pallas). N
 ## 3.7. Lokalność routingu i obsługa równoległych zapytań (uzupełnienie po rundzie 8)
 
 - **Lokalność czasowa routingu jest znana.**
-  - Mixtral [8] raporuje, że ekspert pierwszego wyboru powtarza się w 24–28% kolejnych tokenów, przy 12,5% dla routingu losowego.
+  - Mixtral [8] raportuje, że ekspert pierwszego wyboru powtarza się w 24–28% kolejnych tokenów, przy 12,5% dla routingu losowego.
   - Liang i in. [63] mierzą spójność routingu w segmentach tokenów dla 20 modeli MoE, w tym Qwen3 i DeepSeek-V2-Lite (bez gpt-oss). Pokazują, że eksperci wyspecjalizowani dziedzinowo zwiększają tę spójność, a eksperci współdzieleni ją obniżają.
   - Qiu i in. [64] pokazują, że globalne równoważenie obciążenia, stosowane w Qwen3-MoE, wzmacnia specjalizację dziedzinową ekspertów.
 - **„Super Experts” [65]** to inne zjawisko: kilku ekspertów niezależnych od danych, z ekstremalnymi aktywacjami. Nasz „gorący ekspert” (§4.4) zależy od dokumentu.

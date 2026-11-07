@@ -153,6 +153,10 @@ Zysk na serwerze jest niższy niż w benchmarku, bo serwer dodaje prefill, token
 
 **Poprawność w trybie wsadowym.** Dla jednego kroku dekodowania przy B = 32 największy względny błąd logitów względem prawdy z ekspertami fp32 wynosi 0,19 dla stock i 0,07 dla naszych kerneli; zgodność argmax jest taka sama (93,8%). Wczesne rozchodzenie się wyjść zachłannych przy B ≥ 8 wynika więc z wrażliwości modelu na szum bf16, a nie z błędu kernela.
 
+![Przepustowość przy równoległych zapytaniach](fig/batch_scaling.pdf)
+
+![Serwer mlx-lm i llama.cpp](fig/server_llamacpp.pdf)
+
 **Porównanie z llama.cpp** (Qwen3-30B-A3B, GGUF Q4_0 o tej samej liczbie 4,5 bita na wagę, ustawienia domyślne):
 
 | | llama.cpp | stock mlx-lm | nasze kernele |
@@ -183,6 +187,8 @@ Zmienia się rozstrzyganie remisów. W 9% par (token, warstwa) Qwen3 dwa ekspert
   Każdy przypadek uruchamiamy też z wyłączoną ścieżką awaryjną, żeby na pewno wykonywał się nasz kernel.
 - **Szeroki przegląd:** 480 losowych kształtów (d 512–5120, f 256–4096, E 8–256, k 1–8, T 1–128, trzy rodzaje routingu). Wszystkie są poprawne.
 - **Wydajność:** kernele wygrywają do obciążenia 24 na ekspertach rozmiaru Qwen3-30B i większych, do 8 na mniejszych oraz do 4 dla int4 przy d = 2880 (ścieżka skalarna). Powyżej tych progów dyspozytor przełącza się na ścieżkę mlx-lm, bit w bit identyczną z oryginałem, więc wynik jest wtedy równy punktowi odniesienia. Przykładowo kształt gpt-oss w int4 przy T = 128 poprawił się z 0,51× do 0,98–1,00×.
+![Zysk w funkcji obciążenia; progi dyspozytora](fig/load_policy.pdf)
+
 - **Pozostałe straty:**
   - wszystkie k ekspertów otrzymuje każdy token (tylko syntetycznie, 0,76×; w rzeczywistych śladach nie występuje);
   - eksperci mniejsi niż w jakimkolwiek badanym modelu (0,93–0,95×).
@@ -200,4 +206,4 @@ Główne wyniki zmierzyliśmy ponownie na najnowszych wersjach (mlx-lm 0.32.2, M
 
 - [ ] Ten sam zestaw pomiarów na GPU NVIDIA: Triton fused_moe i Marlin-MoE przez Modal (RQ4).
 - [ ] Drugi układ Apple, np. M2 (`scripts/portability_m2.sh`, §7.3).
-- [ ] Wykresy w formacie pracy dla §6.5–6.8.
+- [x] Wykresy dla §6.5 i §6.7 (`python -m moelab.figures`).

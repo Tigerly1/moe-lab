@@ -149,7 +149,70 @@ def roofline_measured():
     save(fig, "roofline_measured")
 
 
+MODELS = [("Q", "Qwen3-30B-A3B", "Qwen3-30B-A3B-4bit", INK), ("G", "gpt-oss-20b", "gpt-oss-20b-MXFP4-Q8", ACC),
+          ("D", "DeepSeek-V2-Lite", "DeepSeek-V2-Lite-Chat-4bit-mlx", WARM)]
+
+
+def batch_scaling():
+    """Round 8: aggregate throughput vs concurrent requests (BatchGenerator, latest mlx-lm), stock vs ours."""
+    fig, axes = plt.subplots(1, 2, figsize=(8.4, 3.3))
+    for key, lab, _, col in MODELS:
+        rows = R(f"r8/latest/{key}_batch_fused.json")["rows"]
+        B = [r["B"] for r in rows]
+        axes[0].plot(B, [r["stock_tps"] for r in rows], "--", color=col, marker="o", ms=3)
+        axes[0].plot(B, [r["variant_tps"] for r in rows], "-", color=col, marker="o", ms=3, label=lab)
+        axes[1].plot(B, [r["speedup"] for r in rows], "-", color=col, marker="o", ms=3, label=lab)
+    for ax in axes:
+        ax.set_xscale("log", base=2); ax.set_xticks(B, [str(b) for b in B]); ax.set_xlabel("równoległe zapytania B")
+    axes[0].set_ylabel("łączna przepustowość (tok/s)"); axes[0].set_title("linia ciągła: nasze, przerywana: mlx-lm", fontsize=9, color=MUTED)
+    axes[1].axhline(1, color=MUTED, lw=0.8); axes[1].set_ylabel("przyspieszenie (×)"); axes[1].legend(fontsize=8)
+    save(fig, "batch_scaling")
+
+
+def server_and_llamacpp():
+    """Round 8: real mlx_lm.server A/B and llama.cpp, 32 / 8 / 1 concurrent clients."""
+    fig, axes = plt.subplots(1, 2, figsize=(8.4, 3.3))
+    w = 0.38
+    for i, (key, lab, name, col) in enumerate(MODELS):
+        sm = {x["clients"]: x for x in R(f"r8/server_{name}.json")["summary"]}
+        axes[0].bar(i - w / 2, sm[32]["stock_tps"], w, color=MUTED)
+        axes[0].bar(i + w / 2, sm[32]["ours_tps"], w, color=col)
+        axes[0].text(i + w / 2, sm[32]["ours_tps"] + 4, f"{sm[32]['speedup']:.2f}×", ha="center", fontsize=8, color=INK)
+    axes[0].set_xticks(range(3), [m[1] for m in MODELS], fontsize=8); axes[0].set_ylabel("tok/s, 32 klientów HTTP")
+    axes[0].set_title("mlx_lm.server: szary = stock, kolor = nasze", fontsize=9, color=MUTED)
+    lc = {x["clients"]: x for x in R("r8/server_llamacpp_vs_ours_qwen3.json")["summary"]}
+    st = {x["clients"]: x for x in R("r8/server_Qwen3-30B-A3B-4bit.json")["summary"]}
+    C = [1, 8, 32]
+    axes[1].plot(C, [lc[c]["stock_tps"] for c in C], "-", color=WARM, marker="s", ms=4, label="llama.cpp (Q4_0)")
+    axes[1].plot(C, [st[c]["stock_tps"] for c in C], "--", color=MUTED, marker="o", ms=4, label="mlx-lm stock")
+    axes[1].plot(C, [lc[c]["ours_tps"] for c in C], "-", color=INK, marker="o", ms=4, label="mlx-lm + nasze kernele")
+    axes[1].set_xscale("log", base=2); axes[1].set_xticks(C, [str(c) for c in C]); axes[1].set_xlabel("równoległe zapytania HTTP")
+    axes[1].set_ylabel("łączna przepustowość (tok/s)"); axes[1].set_title("Qwen3-30B-A3B, serwer", fontsize=9, color=MUTED)
+    axes[1].legend(fontsize=8)
+    save(fig, "server_llamacpp")
+
+
+def load_policy():
+    """Round 7: speedup vs load T*k/E with the custom kernels forced (grids), threshold lines of the dispatchers."""
+    fig, axes = plt.subplots(1, 2, figsize=(8.4, 3.3), sharey=True)
+    for ax, files, title in [(axes[0], ["grid_q4.json", "grid_small_q4.json"], "int4"), (axes[1], ["grid_mxfp4.json", "grid_small_mxfp4.json"], "MXFP4")]:
+        for f in files:
+            rows = R(f)["rows"]
+            for shape in dict.fromkeys(r["shape"] for r in rows):
+                rr = [r for r in rows if r["shape"] == shape]
+                small = "small" in f
+                ax.plot([r["load"] for r in rr], [r["speedup"] for r in rr], "-" if not small else ":", marker="o", ms=2.5,
+                        color=(BAD if "gpt-oss" in shape and title == "int4" else (MUTED if small else ACC)), lw=1, alpha=0.8)
+        ax.axhline(1, color=INK, lw=0.8)
+        ax.axvline(24, color=ACC, lw=0.8, ls="--"); ax.axvline(8, color=MUTED, lw=0.8, ls="--")
+        ax.set_xscale("log", base=2); ax.set_xlabel("obciążenie L = T·k/E (tokeny na eksperta)"); ax.set_title(title, fontsize=10)
+    axes[0].set_ylabel("przyspieszenie kernela vs mlx-lm (×)")
+    axes[0].text(1.1, 0.5, "czerwony: int4 przy d = 2880\nszary: małe eksperty\nprzerywane: progi dyspozytora", fontsize=7, color=MUTED)
+    save(fig, "load_policy")
+
+
 if __name__ == "__main__":
-    for f in (speedup_vs_T, unique_experts, per_layer, sustained, verify_bench, ablation, mxfp4, roofline_measured):
+    for f in (speedup_vs_T, unique_experts, per_layer, sustained, verify_bench, ablation, mxfp4, roofline_measured,
+              batch_scaling, server_and_llamacpp, load_policy):
         f()
     unique_experts("routing_gptoss_stats.json", "unique_experts_gptoss")
