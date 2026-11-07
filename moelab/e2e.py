@@ -231,6 +231,8 @@ def main():
         ctx_prompt = (ids * (a.context // len(ids) + 1))[:a.context]
     res = {"stock": [], "variant": []}
     outs = {}
+    from .guard import probe, verdict, report
+    probes = [probe()]
     for r in range(a.rounds + 1):  # round 0 = warmup
         for name in (("stock", "variant") if r % 2 == 0 else ("variant", "stock")):
             cls._use_variant = name == "variant"
@@ -241,6 +243,9 @@ def main():
                 print(f"round {r} {name:8s} {tps:6.1f} tok/s  len={len(o)}"
                       + (f"  draft-accept={decode.last_accept:.2f}" if draft is not None else ""), flush=True)
             time.sleep(2)
+    probes.append(probe())
+    g = verdict(probes)
+    print(report(g))
     s, v = np.median(res["stock"]), np.median(res["variant"])
     same = sum(x == y for x, y in zip(outs["stock"], outs["variant"]))
     first_diff = next((i for i, (x, y) in enumerate(zip(outs["stock"], outs["variant"])) if x != y), None)
@@ -250,7 +255,7 @@ def main():
     if a.out:
         json.dump({"args": vars(a), "stock": res["stock"], "variant": res["variant"], "speedup": v / s,
                    "tokens_identical": int(same), "first_diff": first_diff,
-                   "len_stock": len(outs["stock"]), "len_variant": len(outs["variant"])}, open(a.out, "w"), indent=1)
+                   "len_stock": len(outs["stock"]), "len_variant": len(outs["variant"]), "guard": g}, open(a.out, "w"), indent=1)
 
 
 if __name__ == "__main__":

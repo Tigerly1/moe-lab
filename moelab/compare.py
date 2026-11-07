@@ -27,6 +27,8 @@ def child(a):
     mods = [be.load_variant(p) for p in (a.A, a.B)]
     states = [m.prepare(*w) for m in mods]
     mx.eval(states)
+    from .guard import probe
+    print(json.dumps({"probe": probe()}), flush=True)
     for T in a.tokens:
         inp = [be.make_inputs(sh, T, a.dtype, a.routing, seed=a.seed * 100 + s) for s in range(a.windows)]
         x, idx, wts = inp[0]
@@ -39,6 +41,7 @@ def child(a):
                 ts = be.time_chained(lambda *z: mods[i].run(states[i], *z), inp, reps=5)
                 res[i] = float(np.median(ts)) * 1e6
             print(json.dumps({"T": T, "round": r, "A_us": res[0], "B_us": res[1], "errA": ok[0], "errB": ok[1]}), flush=True)
+        print(json.dumps({"probe": probe()}), flush=True)
 
 
 def boot_ci(a_us, b_us, n=4000, seed=0):
@@ -78,13 +81,15 @@ def main():
     a = ap.parse_args()
     if a.child:
         return child(a)
-    rows = []
+    rows, probes = [], []
     for L in range(a.launches):
         cmd = [sys.executable, "-m", "moelab.compare", a.A, a.B, "--child", "--shape", a.shape, "--dtype", a.dtype,
                "--routing", a.routing, "--rounds", str(a.rounds), "--seed", str(a.seed_base + L),
                "--windows", str(a.windows), "--tokens", *map(str, a.tokens)]
         out = subprocess.run(cmd, capture_output=True, text=True, check=True).stdout
-        rows += [dict(json.loads(l), launch=L) for l in out.splitlines() if l.startswith("{")]
+        recs = [json.loads(l) for l in out.splitlines() if l.startswith("{")]
+        probes += [r["probe"] for r in recs if "probe" in r]
+        rows += [dict(r, launch=L) for r in recs if "probe" not in r]
     summary = []
     print(f"A={a.A.split('/')[-1]}  B={a.B.split('/')[-1]}  shape={a.shape} {a.dtype} {a.routing}  "
           f"{a.launches} launches x {a.rounds} rounds")
@@ -100,8 +105,12 @@ def main():
         summary.append(s)
         print(f"T={T:3d}  A {s['A_us']:8.1f}us  B {s['B_us']:8.1f}us  B is {sp:.3f}x  [95% CI {lo:.3f}-{hi:.3f}, by launch]  "
               f"err A {s['errA']:.1e} B {s['errB']:.1e}")
+    from .guard import verdict, report
+    g = verdict(probes)
+    print(report(g))
     if a.out:
-        json.dump({"args": vars(a), "rows": rows, "summary": summary}, open(a.out, "w"), indent=1)
+        json.dump({"args": vars(a), "rows": rows, "summary": summary, "guard": g, "probes": probes},
+                  open(a.out, "w"), indent=1)
 
 
 if __name__ == "__main__":

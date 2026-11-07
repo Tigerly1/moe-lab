@@ -52,6 +52,8 @@ def main():
     U = float(np.mean([len(np.unique(np.array(i[1]))) for i in inp]))
     w_bits = 4.5  # default int4 g64; per-variant W_BITS below
     print(f"{a.shape} T={a.T} {a.routing} windows={a.windows}: residual-add-only slope {res_us:.1f}us (fixed {res_icpt:.0f}us)")
+    from .guard import probe, verdict, report
+    probes = [probe()]
     base = None
     for v in a.variants:
         m = be.load_variant(f"moelab/variants/mlx/{v}.py"); st = m.prepare(*w); mx.eval(st)
@@ -62,6 +64,8 @@ def main():
         print(f"  {v:22s} per-call {s:7.1f}us  minus residual {net:7.1f}us  fixed/eval {c:6.0f}us  "
               f"floor {floor:6.1f}us  {100 * floor / net:5.1f}% of floor@{a.bw:.0f}  speedup {base / net:.3f}x")
         del st
+        probes.append(probe())
+    print(report(verdict(probes)))
 
 
 if __name__ == "__main__":
