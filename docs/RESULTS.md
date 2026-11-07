@@ -411,6 +411,21 @@ The crossover pattern is the same as Qwen3.
 - **Generality:** two very different MoEs, Qwen3 (128×8) and gpt-oss (32×4), both show ~40–50% adjacent-token expert overlap. At T=8, a per-slot kernel reads 32 expert slots where ~13 suffice (gpt-oss), or 64 where ~28 suffice (Qwen3). Expert-reuse kernels pay off on both.
 - No published per-layer routing statistics for gpt-oss were found (research scan); this is a new measurement.
 
+### Autoresearch round 6: int4 tiles exact for any affine scale (`autoresearch/program_r6.md`)
+- **Test first:** `tests/test_int4_small_scales.py` uses weights × 1e-6 and x × 1e6.
+  - It failed for the production MMA tile path at T≥3. Half-precision dequant flushed tiny scales, and half activations overflowed.
+  - The real Qwen3 checkpoint (min scale 8.6e-6, max |x| 153) never triggered it.
+- **Fix:**
+  - The MMA runs on raw codes plus an exact offset (`q|0x6400` as half, `q|0x4300` as bfloat).
+  - The K index is remapped per 64-wide scale group.
+  - `C += s*P + (b − OFF*s)*Σx` in fp32.
+  - MMA operands are bfloat for bf16 inputs.
+- **Speed:** unchanged within noise (agent bench 1.3140 → 1.3102, CI 0.04).
+  - Fresh-seed check (seeds 3000+, 6×4×8): Qwen3 traces T=1/4/8/16/32 = 1.208 / 1.483 / 1.598 [1.57, 1.75] / 2.046 / 2.412.
+  - Full model (Qwen3): verify chunk 4 / 16 / 32 = **1.23× / 1.48× / 1.84×**.
+- **Historical kernel:** `metal_q4_tiles_mma` (round 1) is xfail on the tiny-scale test, with the reason documented. Production does not use it.
+- **Not adopted:** a faster variant (16 rows per threadgroup, +0.7%) fell below the keep threshold. It is saved on branch `autoresearch/int4-scales-r6-mr2`.
+
 ## Open problems / next steps
 1. ~~Small-batch + skewed routing~~ → solved by `metal_q4_tiles_mma` (round 1). Remaining: gpt-oss (d % 128 ≠ 0) tail path, T=2 with uniform routing (round 3 running).
 2. **Regime dispatcher:** v31 for T ≤ 16, sorted `gather_qmm` above. The crossover sits around T≈16–32 on Qwen3 (RQ1).

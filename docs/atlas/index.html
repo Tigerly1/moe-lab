@@ -130,6 +130,7 @@ a{color:var(--accent)}
     <aside><p class="hand">Adjacent tokens share 43–47% of their experts. Random routing would give 6.2%.</p><p class="hand">Top 10% of experts take 42–59% of picks.</p></aside>
     <figcaption>Unique experts touched by T tokens. Slots = what a per-slot kernel reads. Uniform = E(1−(1−k/E)^T).</figcaption>
   </div>
+  <p class="prose">A second, very different MoE shows the same thing. In gpt-oss-20b (32 experts, top-4), adjacent tokens share 41–50% of their experts against 12.5% at random, and 8 consecutive tokens touch about 13 experts for 32 slots. Locality around 45% looks like a property of trained MoE routers, not of one model.</p>
   <div class="fig">
     <div class="plot"><canvas id="cL" role="img" aria-label="Adjacent-token expert overlap per layer, 48 layers">Layer 0 at 17%, deep layers 40–54%.</canvas></div>
     <aside><p class="hand">Layer 0 routes almost randomly (17%). From layer ~5 on it is 40–54%.</p><p class="hand">Same pattern reported for Mixtral. Worth a thesis figure.</p></aside>
@@ -157,7 +158,7 @@ a{color:var(--accent)}
       <tr class="win"><td>MMA + superblocks + GEMV for 1-slot tiles</td><td>1.426</td><td>1.203</td><td>1.350</td><td>1.652</td><td>1.875</td><td>promoted after re-verification</td></tr>
     </tbody></table></div>
   <p class="hand">Lesson: the keep rule used the baseline's noisy CI and threw away three good kernels. Rounds 2 and 3 use the candidate's own CI.</p>
-  <p class="prose">Round 2 (T=1) found the GEMV is already at the bandwidth ceiling and gained 1.5% by keeping all 32 lanes busy in the down projection. Round 3 (T&gt;1, scored on three models) added +4%: the same lane trick for single-slot tiles, a scalar path for 2-slot tiles, and a per-shape K split. At T≥8 the tile kernel is now limited by MMA instruction count. Reuse turned a memory-bound problem into a compute-bound one.</p>
+  <p class="prose">Round 2 (T=1) found the GEMV is already at the bandwidth ceiling and gained 1.5% by keeping all 32 lanes busy in the down projection. Round 3 (T&gt;1, scored on three models) added +4%: the same lane trick for single-slot tiles, a scalar path for 2-slot tiles, and a per-shape K split. At T≥8 the tile kernel is now limited by MMA instruction count. Reuse turned a memory-bound problem into a compute-bound one. Round 6 made it exact for any affine scale. It runs the MMA on the raw 4-bit codes and applies scale and bias in fp32 per 64-group, with bfloat operands for bf16 inputs, after a test showed tiny scales or huge activations broke the half dequant. Speed is unchanged.</p>
   <div class="tbl"><table>
     <thead><tr><th>tiles_v2, verified 5×6 (Qwen3-235B is the only clean held-out shape)</th><th>T=2</th><th>T=4</th><th>T=8</th><th>T=16</th><th>T=32</th></tr></thead>
     <tbody>

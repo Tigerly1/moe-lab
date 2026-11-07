@@ -25,6 +25,9 @@ Every number below is in `runs/*.json` and documented in `docs/RESULTS.md`. Time
 | 05:00 | RQ1 crossover T=16..512 | wins up to T=256, parity at T=512; full-model 32-token chunk 1.86× (Qwen3), 1.52× (gpt-oss) |
 | 05:10 | Thesis chapters 1–3 drafted (agent, 62 refs, ~45 verified) | `docs/thesis/` |
 | 05:15 | 8-min thermal check on final dispatcher | ratio 1.209 → 1.211 |
+| 05:20 | Tiny-scale int4 test written first: production MMA path failed it (latent half-precision hazard) | → round 6 |
+| 05:30 | Autoresearch round 6: raw-code MMA + fp32 scale/bias, bf16 operands | exact for any scale; speed unchanged; full-model verify-16 +48%, chunk-32 +84% |
+| 05:40 | Real routing traces for gpt-oss-20b | same ~45% adjacent-token locality as Qwen3 (new measurement) |
 
 ## What to look at first
 1. `docs/atlas/index.html`, also published as a private artifact (link in the chat summary).
