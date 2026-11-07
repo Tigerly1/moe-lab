@@ -18,6 +18,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 VARIANTS = {  # (model_type, expert quant mode) -> kernel file
     ("qwen3_moe", "affine"): "variants/mlx/metal_q4_moe.py",
     ("gpt_oss", "mxfp4"): "variants/mlx/metal_mxfp4_gptoss.py",
+    ("deepseek_v2", "affine"): "variants/mlx/metal_q4_moe.py",
 }
 
 
