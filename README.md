@@ -31,10 +31,10 @@ Stock = unmodified mlx-lm. "Ours" = our expert kernels + fused router tail (`pyt
 | situation | Gemma-4-26B-A4B 4-bit | Qwen3.6-35B-A3B 4-bit |
 |---|---|---|
 | one chat (chat prompt, 512 tokens) | 72.3 → 79.8 (**1.10×**) | 83.8 → 92.7 (**1.11×**) |
-| 8 requests at once | 1.14× | 1.09× |
-| 32 requests at once | 230 → 290 (**1.25×**) | 289 → 358 (**1.24×**) |
+| 8 requests at once | **1.25×** | 1.09× |
+| 32 requests at once | 232 → 394 (**1.70×**) | 289 → 358 (**1.24×**) |
 
-Below 1.5× at B=32: Qwen3.6 has 256 small experts (~1 token per expert at B=32), and Gemma-4's F=704 runs on scalar tiles. Details: `docs/ACHIEVEMENTS.md`.
+Qwen3.6 stays at 1.24× at B=32: it has 256 small experts, so there is ~1 token per expert and little weight reuse. Gemma-4 was at 1.25× until the MMA tiles were enabled for F % 64 shapes (round 9b). Details: `docs/ACHIEVEMENTS.md`.
 
 - **Use it:** `.venv-latest/bin/python -m moelab.serve --model <mlx-community MoE repo> --decode-concurrency 32`. It is a drop-in `mlx_lm.server` with the kernels; set `MOELAB_STOCK=1` for the unpatched A/B. Server gains are below the BatchGenerator benchmark (1.3–1.4× vs 1.5–1.6×) because the server also spends time on prefill, tokenization and HTTP, which the kernels do not touch.
 - **Where it pays off:** a Mac serving several requests at once. Examples: the `mlx_lm.server` with concurrent users, an agent issuing parallel calls, batch evaluation, synthetic-data generation. Each decode step then sends B tokens from B different sequences through every MoE layer.

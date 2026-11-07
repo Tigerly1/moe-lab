@@ -153,12 +153,18 @@ Przy E=256 (Qwen3.6) większość zysku daje połączony router (§6.6), bo soft
 
 | Model | B=1 | B=8 | B=32 |
 |---|---|---|---|
-| Gemma-4-26B-A4B | 1,11× | 1,14× | **1,25×** (230 → 290 tok/s) |
+| Gemma-4-26B-A4B | 1,11× | 1,25× | **1,70×** (232 → 394 tok/s) |
 | Qwen3.6-35B-A3B | 1,10× | 1,09× | **1,24×** (289 → 358 tok/s) |
 
-Zysk przy B=32 jest mniejszy niż w modelach z §6.5 (1,5–1,6×). Pomiar na poziomie warstwy (T=32: 1,21× dla Qwen3.6 i 1,28× dla Gemma-4) pokazuje, że przyczyna leży w kształcie modelu, a nie w reszcie sieci:
+Pierwszy pomiar dał przy B=32 zysk mniejszy niż w modelach z §6.5 (1,5–1,6×). Pomiar na poziomie warstwy (T=32: 1,21× dla Qwen3.6 i 1,28× dla Gemma-4) pokazał, że przyczyna leży w samej warstwie, a nie w reszcie sieci:
 - **Qwen3.6:** przy E=256 na eksperta przypada średnio T·k/E = 1 token, więc grupowanie po ekspertach ma mało wag do ponownego użycia.
-- **Gemma-4:** F=704 nie jest wielokrotnością 128, więc działają kafelki skalarne zamiast MMA.
+- **Gemma-4:** F=704 nie jest wielokrotnością 128, a dispatcher kierował takie kształty na kafelki skalarne zamiast MMA. Zysk wynosił wtedy 1,25×.
+
+Kafelki MMA wymagają w rzeczywistości jedynie podzielności D i F przez 64, a ten warunek spełnia każdy model kwantyzowany z grupą 64. Po zdjęciu nadmiarowego warunku:
+- **Warstwa Gemma-4, T=32:** zysk rośnie z 1,28× do 1,66×.
+- **Polityka obciążenia** (punkt przejścia przy load 24–32): pokrywa się z regułą dla kształtów podzielnych przez 128, więc osobny wyjątek „load ≤ 4” usunęliśmy (`runs/r9/grid_q4_mma64.json`).
+- **Cały model przy B=32:** 1,70×.
+- **Dokładność:** błąd logitów względem fp32 przy jednym kroku wsadowym wynosi u nas 0,013–0,024, a w stocku 0,025–0,028 (mediana).
 
 **Inne szerokości bitowe.** Wersje 8- i 6-bitowe tych modeli pobierane są rzadziej (~21 tys. i ~10 tys.). Nie warto pisać dla nich kerneli: stock mlx-lm odczytuje w nich wagi przy T=1 z przepustowością 229–245 GB/s (8 bitów) i 210–243 GB/s (6 bitów), czyli na poziomie naszego kernela 4-bitowego (`scripts/r9_bits_probe.py`).
 

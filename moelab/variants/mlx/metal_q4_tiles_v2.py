@@ -391,7 +391,7 @@ _k2 = mx.fast.metal_kernel(name="mq4tv3_down", input_names=["h", "dq", "ds", "db
 
 def prepare(w_gate, w_up, w_down):
     E, f, d = w_gate.shape
-    assert d % 128 == 0 and f % 128 == 0 and GS == 64 and f % R_UP == 0 and d % R_DOWN == 0, "shape constraints"
+    assert d % 64 == 0 and f % 64 == 0 and GS == 64 and f % R_UP == 0 and d % R_DOWN == 0, "shape constraints"
     return {n: mx.quantize(w, group_size=GS, bits=BITS) for n, w in (("g", w_gate), ("u", w_up), ("d", w_down))}
 
 

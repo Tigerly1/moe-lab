@@ -40,10 +40,10 @@ def dequant(s):
 
 
 def custom_wins(T, k, E, D, F):
+    # round 9: with the MMA tiles on every D, F % 64 shape the round-7 rule for %128 shapes holds for all
+    # (runs/r9/grid_q4_mma64.json: Gemma-4 F=704 crosses at load 24-32, Qwen3.6 at 8-12)
     load = T * k / E
-    if D % 128 == 0 and F % 128 == 0:
-        return load <= (24 if D * F >= 3 << 19 else 8)
-    return load <= 4
+    return load <= (24 if D * F >= 3 << 19 else 8)
 
 
 def run(s, x, idx, wts, act=0):
@@ -54,6 +54,6 @@ def run(s, x, idx, wts, act=0):
     E, F, D = s["g"][0].shape[0], s["g"][0].shape[1], s["d"][0].shape[1]
     if not custom_wins(T, k, E, D, F):
         return gather_moe(s, x, idx, wts, GS, BITS, act=act)
-    if D % 128 == 0 and F % 128 == 0 and x.dtype in (mx.bfloat16, mx.float16):
+    if x.dtype in (mx.bfloat16, mx.float16):   # round 9: MMA tiles need only D, F % 64 (always true at group 64)
         return _mma.run(s, x, idx, wts, act)   # fp32 activations -> scalar tiles (exact), see tiles_v2 note
     return _tb.run(s, x, idx, wts, act)

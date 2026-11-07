@@ -3,6 +3,16 @@
 Verified results only: re-measured (≥2 process launches or `moelab.compare`), guard ok. Newest first.
 Hardware: Apple M4 Pro, 48 GB, unless stated. Details and caveats: `docs/RESULTS.md`.
 
+## 2026-11-07 — round 9b: MMA tiles on every 4-bit shape, Gemma-4 at 32 requests 1.25× → 1.70×
+
+- **The cause.** The MMA expert tiles were gated on D, F % 128. Gemma-4 (F=704) therefore fell to scalar tiles, which are 2× slower than stock at load 4. The MMA kernels only need D, F % 64, which always holds with group-64 quantization.
+- **Verification:** correct on F=704, 192 and D=320 at T=3–64; 530 kernel tests pass.
+- **Layer level** (grid, Gemma-4 shape): T=32 goes from 1.28× to **1.66×**, and T=64 reaches 1.90×.
+- **Load policy re-measured** (`runs/r9/grid_q4_mma64.json`): the "≤ 4 for non-%128" special case is gone. Gemma crosses at load 24–32, Qwen3.6 at load 8–12, which matches the existing rule.
+- **Random-shape sweep:** 60 cases, all correct, median 1.21×, min 0.986×. The guard flagged contention at 92%, so this counts as a screen only.
+- **Gemma-4 BatchGenerator,** 2 launches: B=8 **1.25×**, B=32 **1.70×** (232 → 394 tok/s).
+- **Batched accuracy vs fp32** (`scripts/r9_batch_truth.py`): median logit error is ours 0.013 / 0.021 / 0.024 vs stock 0.028 / 0.027 / 0.025 at B=1 / 8 / 32. Argmax agreement is equal within one sequence.
+
 ## 2026-11-07 — round 9: the MoE models people actually run locally
 
 **Choosing targets from data.** We ranked the 400 most-downloaded mlx-community repos and looked at the MoE models among them.
@@ -33,7 +43,7 @@ For Qwen3.6 the fused router matters: with E=256, the stock softmax plus argpart
 
 These gains are smaller than the 1.5–1.6× on the older models. The cause is structural, and the layer level shows it (compare, T=32: Qwen3.6 1.21×, Gemma-4 1.28×):
 - **Qwen3.6:** with E=256 there is about 1 token per expert at B=32, so little weight reuse.
-- **Gemma-4:** F=704 is not a multiple of 128, so T>1 runs on the scalar tiles instead of MMA.
+- **Gemma-4:** F=704 is not a multiple of 128, so T>1 ran on the scalar tiles instead of MMA. Fixed in round 9b: 1.70×.
 
 **Accuracy** (`scripts/r9_layer_error.py`): per layer on real activations, against fp32 truth on the same inputs.
 
