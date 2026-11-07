@@ -62,6 +62,24 @@ Zysk rośnie z T zgodnie z modelem z rozdziału 4. Przy rzeczywistym routingu T 
 
 Każda para zgadza się co do najbardziej prawdopodobnego tokenu (top-1) w 95,8–96,2% pozycji. To poziom szumu numerycznego bf16, a nie degradacja jakości.
 
+## 6.4a. Format MXFP4 (format ekspertów gpt-oss)
+
+Porównujemy nasz kernel ze ścieżką mlx-lm skwantyzowaną w trybie `mxfp4`. Format zapisuje wagi jako FP4 E2M1 ze skalą E8M0 na każde 32 wagi, co daje 4,25 bitu na wagę.
+
+| Kształt | T = 1 | T = 4 | T = 8 | T = 16 | T = 32 |
+|---|---|---|---|---|---|
+| gpt-oss-20b | 1,16 | 1,29 | 1,52 | 1,69 | – |
+| Qwen3-30B-A3B (ślady) | 1,26 | 1,54 | 1,79 | 2,06 | 2,42 |
+| gpt-oss-120b (spoza strojenia) | 1,17 | 1,14 | 1,17 | 1,24 | – |
+| Mixtral-8x7B (spoza strojenia) | 1,05 | 1,39 | 1,92 | – | – |
+| DeepSeek-V2-Lite (spoza strojenia) | 1,18 | 1,25 | 1,35 | 1,45 | – |
+
+**Koszt dekodowania.** Wartości FP4 dekodujemy dokładnie, jedną operacją bitową dla pary wartości do typu `half2`. Kosztuje to tyle samo co dekodowanie int4 affine. Format nie ma członu bias i nie wymaga przeskalowania x, więc kernel MXFP4 jest szybszy od kernela int4 mniej więcej w stosunku liczby bajtów (4,25 wobec 4,5 bitu).
+
+**Wniosek dla RQ4.** Te same decyzje projektowe przenoszą się między formatami kwantyzacji bez zmian:
+- GEMV z pełnym wykorzystaniem linii przy T = 1;
+- współdzielenie odczytów wag między slotami tego samego eksperta przy T > 1.
+
 ## 6.5. Do uzupełnienia
 
 - [ ] Ten sam zestaw pomiarów na GPU NVIDIA: Triton fused_moe i Marlin-MoE przez Modal (RQ4).
