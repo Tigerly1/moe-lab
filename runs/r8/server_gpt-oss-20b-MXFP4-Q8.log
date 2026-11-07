@@ -1,0 +1,15 @@
+round 0 stock clients=  1:    59.9 tok/s aggregate, median latency 4.28s, 256 tokens
+round 0 stock clients=  8:   107.5 tok/s aggregate, median latency 19.05s, 2048 tokens
+round 0 stock clients= 32:   158.1 tok/s aggregate, median latency 51.51s, 8192 tokens
+round 0 ours  clients=  1:    62.3 tok/s aggregate, median latency 4.11s, 256 tokens
+round 0 ours  clients=  8:   143.5 tok/s aggregate, median latency 14.27s, 2048 tokens
+round 0 ours  clients= 32:   215.5 tok/s aggregate, median latency 37.60s, 8192 tokens
+round 1 ours  clients=  1:    66.2 tok/s aggregate, median latency 3.87s, 256 tokens
+round 1 ours  clients=  8:   144.3 tok/s aggregate, median latency 14.19s, 2048 tokens
+round 1 ours  clients= 32:   219.2 tok/s aggregate, median latency 36.92s, 8192 tokens
+round 1 stock clients=  1:    59.6 tok/s aggregate, median latency 4.29s, 256 tokens
+round 1 stock clients=  8:   105.3 tok/s aggregate, median latency 19.46s, 2048 tokens
+round 1 stock clients= 32:   156.1 tok/s aggregate, median latency 52.16s, 8192 tokens
+clients=  1: stock    59.7 tok/s -> ours    64.2 tok/s (1.075x); median latency 4.28s -> 3.99s
+clients=  8: stock   106.4 tok/s -> ours   143.9 tok/s (1.353x); median latency 19.25s -> 14.23s
+clients= 32: stock   157.1 tok/s -> ours   217.3 tok/s (1.383x); median latency 51.84s -> 37.26s

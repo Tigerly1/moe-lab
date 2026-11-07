@@ -20,9 +20,12 @@ Stock = unmodified mlx-lm. "Ours" = our expert kernels + fused router tail (`pyt
 | **8 at once** | 167 → 204 (1.23×) | 138 → 197 (**1.43×**) | 209 → 265 (1.27×) | yes |
 | **16 at once** | 189 → 252 (1.33×) | 167 → 259 (**1.55×**) | 257 → 326 (1.27×) | yes |
 | **32 at once** | 222 → 352 (**1.59×**) | 224 → 359 (**1.60×**) | 312 → 481 (**1.54×**) | **yes, the main win** |
+| **real `mlx_lm.server`, 32 concurrent HTTP clients** (`moelab.serve`, 256 tokens each) | 156 → 215 tok/s (**1.38×**), median reply 52 s → 38 s | 157 → 217 (**1.38×**), 52 s → 37 s | 199 → 262 (**1.32×**), 41 s → 31 s | **yes** |
+| same server, 8 clients | 1.16×, 17.0 s → 14.6 s | 1.35×, 19.3 s → 14.2 s | 1.18×, 14.0 s → 11.9 s | yes |
 | verify step of 16 / 32 tokens (speculative decoding, chunked prefill) | 1.47× / 1.79× | 1.71× / 1.54× | 1.33× / 1.63× | yes, if the stack uses it |
 | CPU fully busy (8 threads of other work) | 1.01–1.07× | — | — | no |
 
+- **Use it:** `.venv-latest/bin/python -m moelab.serve --model <mlx-community MoE repo> --decode-concurrency 32`. It is a drop-in `mlx_lm.server` with the kernels; set `MOELAB_STOCK=1` for the unpatched A/B. Server gains are below the BatchGenerator benchmark (1.3–1.4× vs 1.5–1.6×) because the server also spends time on prefill, tokenization and HTTP, which the kernels do not touch.
 - **Where it pays off:** a Mac serving several requests at once. Examples: the `mlx_lm.server` with concurrent users, an agent issuing parallel calls, batch evaluation, synthetic-data generation. Each decode step then sends B tokens from B different sequences through every MoE layer.
 - **Why the gain grows with B:** stock mlx-lm re-reads each expert's weights per (token, slot) until 64 slots, while our kernels group slots by expert and read each expert once per tile. This technique is standard on NVIDIA (vLLM fused_moe, llama.cpp map0 + mul_mm_id); here it is brought to MLX/Metal with measured serving gains (`docs/related_work_r8.md`).
 - **Where it does not help:**

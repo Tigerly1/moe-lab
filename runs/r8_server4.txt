@@ -1,0 +1,5 @@
+== DeepSeek-V2-Lite-Chat-4bit-mlx
+clients=  1: stock    88.9 tok/s -> ours    99.0 tok/s (1.114x); median latency 2.88s -> 2.59s
+clients=  8: stock   146.2 tok/s -> ours   172.4 tok/s (1.179x); median latency 14.00s -> 11.88s
+clients= 32: stock   198.6 tok/s -> ours   262.0 tok/s (1.319x); median latency 40.82s -> 30.92s
+done

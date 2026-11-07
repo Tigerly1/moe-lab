@@ -1,0 +1,9 @@
+== Qwen3-30B-A3B-4bit
+clients=  1: stock    64.4 tok/s -> ours    78.5 tok/s (1.220x); median latency 3.98s -> 3.26s
+clients=  8: stock   120.7 tok/s -> ours   140.5 tok/s (1.163x); median latency 16.97s -> 14.58s
+clients= 32: stock   156.0 tok/s -> ours   215.0 tok/s (1.379x); median latency 52.24s -> 37.81s
+== gpt-oss-20b-MXFP4-Q8
+clients=  1: stock    59.7 tok/s -> ours    64.2 tok/s (1.075x); median latency 4.28s -> 3.99s
+clients=  8: stock   106.4 tok/s -> ours   143.9 tok/s (1.353x); median latency 19.25s -> 14.23s
+clients= 32: stock   157.1 tok/s -> ours   217.3 tok/s (1.383x); median latency 51.84s -> 37.26s
+done

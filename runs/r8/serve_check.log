@@ -1,0 +1,13 @@
+/Users/fpilarek-m4pro/Desktop/moe-thesis/moe-lab/.venv-latest/lib/python3.14/site-packages/mlx_lm/server.py:1894: UserWarning: mlx_lm.server is not recommended for production as it only implements basic security checks.
+  warnings.warn(
+2026-11-07 15:24:49,547 - INFO - Starting httpd at 127.0.0.1 on port 8092...
+127.0.0.1 - - [07/Nov/2026 15:24:49] "GET /v1/models HTTP/1.1" 200 -
+2026-11-07 15:24:49,752 - INFO - HTTP Request: GET https://huggingface.co/api/models/mlx-community/Qwen3-30B-A3B-4bit/revision/main "HTTP/1.1 200 OK"
+Fetching 12 files:   0%|          | 0/12 [00:00<?, ?it/s]Fetching 12 files: 100%|██████████| 12/12 [00:00<00:00, 4773.49it/s]
+[moe-lab] patched 48 MoE blocks with metal_q4_moe.py + fused router
+2026-11-07 15:24:50,488 - INFO - Prompt Cache: 0 sequences, 0.00 GB
+2026-11-07 15:24:50,488 - INFO - - assistant: 0 sequences, 0.00 GB
+2026-11-07 15:24:50,488 - INFO - - user: 0 sequences, 0.00 GB
+2026-11-07 15:24:50,488 - INFO - - system: 0 sequences, 0.00 GB
+127.0.0.1 - - [07/Nov/2026 15:24:50] "POST /v1/completions HTTP/1.1" 200 -
+2026-11-07 15:24:50,567 - INFO - Prompt processing progress: 1/1

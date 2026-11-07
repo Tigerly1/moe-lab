@@ -728,6 +728,21 @@ Method:
   - Grouping tokens by expert is standard on NVIDIA (vLLM fused_moe; llama.cpp #12612 map0 + mul_mm_id). The contribution is bringing it to MLX with measured serving gains.
   - The baseline includes MLX's merged gather_qmm improvement (#4572, in 0.32.3+).
 
+### Real server: `moelab.serve` vs stock `mlx_lm.server` (mlx-lm 0.32.2)
+`moelab/serve_bench.py` starts the server (patched, or with `MOELAB_STOCK=1`), sends N concurrent OpenAI `/v1/completions` requests (different 90-word prompts, greedy, 256 tokens), and alternates stock and ours over 2 rounds (`runs/r8/server_*.json`).
+
+| clients | Qwen3-30B-A3B | gpt-oss-20b | DeepSeek-V2-Lite |
+|---|---|---|---|
+| 1 | 64 → 79 tok/s (1.22×) | 60 → 64 (1.08×) | 89 → 99 (1.11×) |
+| 8 | 121 → 141 (1.16×), median latency 17.0 → 14.6 s | 106 → 144 (1.35×), 19.3 → 14.2 s | 146 → 172 (1.18×), 14.0 → 11.9 s |
+| 32 | **156 → 215 (1.38×), 52.2 → 37.8 s** | **157 → 217 (1.38×), 51.8 → 37.3 s** | **199 → 262 (1.32×), 40.8 → 30.9 s** |
+
+- Lower than the BatchGenerator benchmark: the server adds prefill, tokenization and HTTP, which the kernels do not speed up.
+- **Bugs found on the way:**
+  - **Mine:** the client's prompt windows ran past the corpus end, so some prompts were empty. On Qwen3 and gpt-oss that crashed the server; DeepSeek tokenizes them to BOS only, so its first numbers were invalid. Re-run with wrapped windows.
+  - **Also mine:** the server log went to an unread pipe, which can block the server.
+  - **mlx-lm 0.32.2:** **one request with an empty prompt kills the server's generation thread for every client**; all later requests get "generation thread died" (`scripts/r8_empty_prompt_bug.sh`, `runs/r8_empty_prompt_bug.txt`). This bug class is already tracked (mlx-lm #1513, #1909), so at most a repro comment is worth adding.
+
 ### Baseline is current
 Everything above was re-measured on **mlx-lm 0.32.2** (latest; Python 3.14 venv `.venv-latest`) with MLX 0.32.4 (latest), guard ok:
 - single stream: Qwen3 1.090 (kernels) / 1.166 (+router), gpt-oss 1.075 / 1.101, DeepSeek 1.073 / 1.119;

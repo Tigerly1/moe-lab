@@ -1,0 +1,10 @@
+1. normal request:
+{"id": "cmpl-1fed6dcb-9a3f-4230-af8b-1e832fd5ec98", "system_fingerprint": "0.32.2-0.32.4-macOS-26.6.2-arm64-arm-64bit-Mach-O-applegpu_g16s", "object": "text_com
+2. empty prompt:
+
+3. normal request afterwards:
+{"error": "generation thread died"}
+--- server errors:
+2026-11-07 16:00:09,179 - ERROR - mlx_lm.server generation thread died: Sequence 1 has an empty prompt.
+    raise ValueError(f"Sequence {uid} has an empty prompt.")
+ValueError: Sequence 1 has an empty prompt.

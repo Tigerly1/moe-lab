@@ -1,0 +1,81 @@
+/Users/fpilarek-m4pro/Desktop/moe-thesis/moe-lab/.venv-latest/lib/python3.14/site-packages/mlx_lm/server.py:1894: UserWarning: mlx_lm.server is not recommended for production as it only implements basic security checks.
+  warnings.warn(
+2026-11-07 16:00:08,140 - INFO - Starting httpd at 127.0.0.1 on port 8093...
+2026-11-07 16:00:08,615 - INFO - HTTP Request: GET https://huggingface.co/api/models/mlx-community/Qwen3-0.6B-4bit/revision/main "HTTP/1.1 200 OK"
+Calling `python -m mlx_lm.server...` directly is deprecated. Use `mlx_lm.server...` or `python -m mlx_lm server ...` instead.
+Fetching 9 files:   0%|          | 0/9 [00:00<?, ?it/s]Fetching 9 files: 100%|██████████| 9/9 [00:00<00:00, 2403.15it/s]
+127.0.0.1 - - [07/Nov/2026 16:00:08] "GET /v1/models HTTP/1.1" 200 -
+2026-11-07 16:00:09,107 - INFO - Prompt Cache: 0 sequences, 0.00 GB
+2026-11-07 16:00:09,107 - INFO - - assistant: 0 sequences, 0.00 GB
+2026-11-07 16:00:09,107 - INFO - - user: 0 sequences, 0.00 GB
+2026-11-07 16:00:09,107 - INFO - - system: 0 sequences, 0.00 GB
+127.0.0.1 - - [07/Nov/2026 16:00:09] "POST /v1/completions HTTP/1.1" 200 -
+2026-11-07 16:00:09,131 - INFO - Prompt processing progress: 1/2
+2026-11-07 16:00:09,140 - INFO - Prompt processing progress: 2/2
+2026-11-07 16:00:09,179 - INFO - Prompt Cache: 1 sequences, 0.00 GB
+2026-11-07 16:00:09,179 - INFO - - assistant: 1 sequences, 0.00 GB
+2026-11-07 16:00:09,179 - INFO - - user: 0 sequences, 0.00 GB
+2026-11-07 16:00:09,179 - INFO - - system: 0 sequences, 0.00 GB
+127.0.0.1 - - [07/Nov/2026 16:00:09] "POST /v1/completions HTTP/1.1" 200 -
+2026-11-07 16:00:09,179 - ERROR - mlx_lm.server generation thread died: Sequence 1 has an empty prompt.
+Traceback (most recent call last):
+  File "/Users/fpilarek-m4pro/Desktop/moe-thesis/moe-lab/.venv-latest/lib/python3.14/site-packages/mlx_lm/server.py", line 544, in _run_generate
+    self._generate()
+    ~~~~~~~~~~~~~~^^
+  File "/Users/fpilarek-m4pro/Desktop/moe-thesis/moe-lab/.venv-latest/lib/python3.14/site-packages/mlx_lm/server.py", line 867, in _generate
+    (uid,) = batch_generator.insert_segments(
+             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        segments=[segments],
+        ^^^^^^^^^^^^^^^^^^^^
+    ...<5 lines>...
+        stop_sequences=[stop_sequences],
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/fpilarek-m4pro/Desktop/moe-thesis/moe-lab/.venv-latest/lib/python3.14/site-packages/mlx_lm/generate.py", line 1698, in insert_segments
+    raise ValueError(f"Sequence {uid} has an empty prompt.")
+ValueError: Sequence 1 has an empty prompt.
+----------------------------------------
+Exception occurred during processing of request from ('127.0.0.1', 64372)
+Traceback (most recent call last):
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 697, in process_request_thread
+    self.finish_request(request, client_address)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+    ~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/fpilarek-m4pro/Desktop/moe-thesis/moe-lab/.venv-latest/lib/python3.14/site-packages/mlx_lm/server.py", line 1887, in <lambda>
+    lambda *args, **kwargs: handler_class(
+                            ~~~~~~~~~~~~~^
+        response_generator,
+        ^^^^^^^^^^^^^^^^^^^
+    ...<2 lines>...
+        **kwargs,
+        ^^^^^^^^^
+    ),
+    ^
+  File "/Users/fpilarek-m4pro/Desktop/moe-thesis/moe-lab/.venv-latest/lib/python3.14/site-packages/mlx_lm/server.py", line 1211, in __init__
+    super().__init__(*args, **kwargs)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socketserver.py", line 766, in __init__
+    self.handle()
+    ~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 496, in handle
+    self.handle_one_request()
+    ~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.3_1/Frameworks/Python.framework/Versions/3.14/lib/python3.14/http/server.py", line 484, in handle_one_request
+    method()
+    ~~~~~~^^
+  File "/Users/fpilarek-m4pro/Desktop/moe-thesis/moe-lab/.venv-latest/lib/python3.14/site-packages/mlx_lm/server.py", line 1352, in do_POST
+    self.handle_completion(request, stop_words)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/fpilarek-m4pro/Desktop/moe-thesis/moe-lab/.venv-latest/lib/python3.14/site-packages/mlx_lm/server.py", line 1611, in handle_completion
+    for gen in response:
+               ^^^^^^^^
+  File "/Users/fpilarek-m4pro/Desktop/moe-thesis/moe-lab/.venv-latest/lib/python3.14/site-packages/mlx_lm/server.py", line 1175, in _inner
+    response = self._await_response(response_queue)
+  File "/Users/fpilarek-m4pro/Desktop/moe-thesis/moe-lab/.venv-latest/lib/python3.14/site-packages/mlx_lm/server.py", line 1160, in _await_response
+    raise RuntimeError("generation thread died") from None
+RuntimeError: generation thread died
+----------------------------------------
+127.0.0.1 - - [07/Nov/2026 16:00:10] "POST /v1/completions HTTP/1.1" 404 -
