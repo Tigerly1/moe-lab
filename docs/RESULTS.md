@@ -241,6 +241,34 @@ Correctness: worst rel-err 3.9e-3 over 5 shapes × 4 routings × T ∈ {1..64}.
 | verify chunk 7 (6 drafts) | 126.9 | 170.0 | **+34.0%** |
 | verify chunk 16 | 192.6 | 279.2 | **+44.9%** |
 
+### Autoresearch round 4: MXFP4 (gpt-oss expert format) → `metal_mxfp4_moe`
+- **Format:** MLX `mode="mxfp4"`. Each value is FP4 E2M1, with one E8M0 scale per 32 values and no bias, giving **4.25 bits/weight**. That is 6% fewer bytes than affine int4 g64.
+- **Baseline:** the real mlx-lm SwitchGLU quantized to MXFP4. The candidate started as that same wrapper (score 1.000 ± 0.003; this doubles as the bench's sanity check).
+- **Agent result:** score **1.398** after 7 bench runs.
+- **Rule slip:** the agent kept one commit that regressed a point by more than 0.03. It reported this itself, and the final commit fixes it.
+
+**Key tricks:**
+1. **Exact FP4 decode of 2 values per bit-trick:** `as_type<half2>(((p&0x80008)<<12)|((p&0x70007)<<9))` = value·2^-14, subnormals included. The 2^14 is folded into the E8M0 scale. Verified against `mx.dequantize` with max diff 0.
+2. **T=1:** a port of the int4 v4 GEMV.
+3. **1<T<8:** slots of the same expert are paired inside the kernel (rank-parity scan), so each pair shares every weight decode.
+4. **T≥8:** a map prepass, then groups of ≤8, with simdgroup 8×8 MMA for groups of ≥3. The k index is remapped inside 64-wide blocks, so d=2880 needs no tail path.
+
+**Independent verification** (5×6, bf16). Correctness: worst rel-err 2.5e-3 over 7 shapes × 4 routings × 11 values of T.
+
+| shape (MXFP4) | T=1 | T=2 | T=4 | T=8 | T=16 | T=32 |
+|---|---|---|---|---|---|---|
+| gpt-oss-20b, uniform | 1.164 | 1.156 | 1.285 | 1.521 | 1.688 | |
+| Qwen3-30B-A3B, real traces | **1.264** | 1.412 | 1.536 | 1.786 | 2.064 | **2.424** |
+| gpt-oss-120b, uniform (held-out) | 1.168 | | 1.135 | 1.167 | 1.242 | |
+| Mixtral-8x7B, uniform (held-out) | 1.045 | | 1.385 | 1.923 | | |
+| DeepSeek-V2-Lite, uniform (held-out) | 1.184 | | 1.248 | 1.353 | 1.448 | |
+
+**Agent's measured lessons:**
+- **FP4 decode cost:** decoding FP4 costs about the same as decoding affine int4 (≈2.5 int ops + 1 cvt per weight, against int4's bias term and x prescale). Our MXFP4 GEMV is therefore faster than our int4 GEMV roughly in proportion to the bytes (4.25 vs 4.5 bits): Qwen3 T=1 106 µs vs 114 µs.
+- **T>1 bottleneck:** at T>1 the kernel is ALU-bound, because repeated experts are served from cache. Sharing the decode between slots of the same expert is the main lever.
+- **Failed:** lookup tables (threadgroup or `simd_shuffle`) were 1.6–2.2× slower; half2 math gave no gain.
+- **Remaining headroom:** gpt-oss points are within ~4% of the memory floor. Qwen3 T=16 is ~45% above its floor, bound by MMA plus decode instruction count.
+
 ## Open problems / next steps
 1. ~~Small-batch + skewed routing~~ → solved by `metal_q4_tiles_mma` (round 1). Remaining: gpt-oss (d % 128 ≠ 0) tail path, T=2 with uniform routing (round 3 running).
 2. **Regime dispatcher:** v31 for T ≤ 16, sorted `gather_qmm` above. The crossover sits around T≈16–32 on Qwen3 (RQ1).
