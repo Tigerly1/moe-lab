@@ -1,0 +1,65 @@
+From e8559e5eeab3f2609a74cea3a771ae4a9120601b Mon Sep 17 00:00:00 2001
+From: Tigerly1 <49274205+Tigerly1@users.noreply.github.com>
+Date: Sat, 7 Nov 2026 21:30:37 +0100
+Subject: [PATCH] server: reject empty prompts instead of ending the generation
+ thread
+
+An empty tokenized prompt (e.g. "prompt": "" with a tokenizer that adds no
+BOS) reached BatchGenerator.insert_segments, which raises ValueError inside the
+generation thread. The thread ended, and every later request failed.
+
+Reject the request with 400 before it is inserted; the server keeps serving.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ mlx_lm/server.py     | 8 +++++++-
+ tests/test_server.py | 7 +++++++
+ 2 files changed, 14 insertions(+), 1 deletion(-)
+
+diff --git a/mlx_lm/server.py b/mlx_lm/server.py
+index a6a9a6d..5a5b3bb 100644
+--- a/mlx_lm/server.py
++++ b/mlx_lm/server.py
+@@ -831,6 +831,12 @@ class ResponseGenerator:
+                         rqueue.put(e)
+                         continue
+ 
++                    # BatchGenerator raises on an empty prompt, and an exception
++                    # here would end the generation thread for every client.
++                    if len(prompt) == 0:
++                        rqueue.put(ValueError("The prompt is empty."))
++                        continue
++
+                     stop_sm = TextStateMachine.from_stop_words(args.stop_words)
+                     text_sm = TextStateMachine.from_tokenizer(current_tokenizer)
+ 
+@@ -1591,7 +1597,7 @@ class APIHandler(BaseHTTPRequestHandler):
+                 progress_callback=keepalive_callback,
+             )
+         except Exception as e:
+-            self._set_completion_headers(404)
++            self._set_completion_headers(400 if isinstance(e, ValueError) else 404)
+             self.end_headers()
+             self.wfile.write(json.dumps({"error": str(e)}).encode())
+             return
+diff --git a/tests/test_server.py b/tests/test_server.py
+index dd3d035..8abc473 100644
+--- a/tests/test_server.py
++++ b/tests/test_server.py
+@@ -322,6 +322,13 @@ class TestServer(unittest.TestCase):
+         cls.server_thread.join()
+         cls.response_generator.stop_and_join()
+ 
++    def test_empty_prompt_is_rejected_and_server_survives(self):
++        url = f"http://localhost:{self.port}/v1/completions"
++        response = requests.post(url, json={"prompt": "", "max_tokens": 4})
++        self.assertEqual(response.status_code, 400)
++        response = requests.post(url, json={"prompt": "hi", "max_tokens": 4})
++        self.assertEqual(response.status_code, 200)
++
+     def test_max_tokens_zero_is_rejected(self):
+         url = f"http://localhost:{self.port}/v1/completions"
+         response = requests.post(url, json={"prompt": "hi", "max_tokens": 0})
+-- 
+2.50.1 (Apple Git-155)
+
