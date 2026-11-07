@@ -169,6 +169,16 @@ a{color:var(--accent)}
 </section>
 
 <section>
+  <h2>5b. Same idea, the gpt-oss format: MXFP4</h2>
+  <p class="prose">MXFP4 stores each weight as a 4-bit float (E2M1) with one power-of-two scale per 32 weights: 4.25 bits, no bias term. Round 4 of autoresearch ported both kernels to it. The key trick decodes two FP4 values into a <code>half2</code> with a single bit expression, exact including subnormals, and folds the leftover 2<sup>14</sup> into the scale. Every point below beats mlx-lm's own MXFP4 path, including three model shapes the agent never saw.</p>
+  <div class="fig">
+    <div class="plot"><canvas id="cM" role="img" aria-label="MXFP4 speedup vs T for gpt-oss-20b, Qwen3, gpt-oss-120b, Mixtral, DeepSeek-V2-Lite">Qwen3 traces: 1.26 to 2.42; gpt-oss-20b: 1.16 to 1.69.</canvas></div>
+    <aside><p class="hand">Decoding FP4 costs about the same as int4: no bias term and no x prescale pay for the bit trick.</p><p class="hand">So MXFP4 is faster than int4 by roughly its byte ratio: Qwen3 T=1 at 106 vs 114 µs.</p></aside>
+    <figcaption>Speedup over mlx-lm SwitchGLU quantized with mode="mxfp4". Dashed lines are shapes held out from tuning. 5 launches × 6 rounds.</figcaption>
+  </div>
+</section>
+
+<section>
   <h2>6. Does it hold end to end?</h2>
   <p class="prose">Production dispatcher <code>metal_q4_moe</code>: the v4 GEMV at T=1, the MMA tile kernel at T&gt;1. The verify benchmark feeds the same fixed text through the full model in chunks, the way a speculative-decoding verify step does, so both arms do identical work.</p>
   <div class="fig">
@@ -258,6 +268,14 @@ a{color:var(--accent)}
       {label:'ratio, sampled rounds',data:S.map(p=>({x:p[0],y:p[1]})),borderColor:c.accent,backgroundColor:c.accent,pointRadius:2,borderWidth:1},
       {label:'median 1.168',data:[{x:0,y:1.168},{x:600,y:1.168}],borderColor:c.warm,borderDash:[6,4],pointRadius:0}]},
       options:Object.assign(so,{parsing:false})}));
+    const P=(ts,ys)=>ts.map((t,i)=>({x:t,y:ys[i]}));
+    charts.push(new Chart(document.getElementById('cM'),{type:'line',data:{datasets:[
+      {label:'Qwen3-30B, traces',data:P([1,2,4,8,16,32],[1.264,1.412,1.536,1.786,2.064,2.424]),borderColor:c.accent,backgroundColor:c.accent},
+      {label:'gpt-oss-20b',data:P([1,2,4,8,16],[1.164,1.156,1.285,1.521,1.688]),borderColor:c.warm,backgroundColor:c.warm},
+      {label:'gpt-oss-120b (held-out)',data:P([1,4,8,16],[1.168,1.135,1.167,1.242]),borderColor:c.warm,backgroundColor:c.warm,borderDash:[5,4]},
+      {label:'Mixtral (held-out)',data:P([1,4,8],[1.045,1.385,1.923]),borderColor:c.good,backgroundColor:c.good,borderDash:[5,4]},
+      {label:'DeepSeek-V2-Lite (held-out)',data:P([1,4,8,16],[1.184,1.248,1.353,1.448]),borderColor:c.muted,backgroundColor:c.muted,borderDash:[5,4]}]},
+      options:Object.assign(base(c,'tokens per step T','speedup vs mlx-lm MXFP4 (×)',true),{parsing:false})}));
     charts.push(new Chart(document.getElementById('cV'),{type:'bar',data:{labels:['1','2','4','7','16'],datasets:[
       {label:'stock mlx-lm',data:[74.5,102.6,127.5,126.9,192.6],backgroundColor:c.muted,borderRadius:3},
       {label:'ours (dispatcher)',data:[79.8,112.1,156.6,170.0,279.2],backgroundColor:c.accent,borderRadius:3}]},
