@@ -1,0 +1,27 @@
+{
+ "args": {
+  "model": "mlx-community/gpt-oss-20b-MXFP4-Q8",
+  "variant": "moelab/variants/mlx/metal_mxfp4_gptoss.py",
+  "tokens": 512,
+  "rounds": 3,
+  "quality": false,
+  "draft": null,
+  "num_draft": 3,
+  "max_t": 16,
+  "out": "runs/e2e_gptoss_plain.json",
+  "verify_chunks": null
+ },
+ "stock": [
+  75.4195831145868,
+  75.53327998209618,
+  75.44616663659482
+ ],
+ "variant": [
+  81.4872473054707,
+  81.5953294554443,
+  81.1324762607052
+ ],
+ "speedup": 1.080071406384028,
+ "len_stock": 512,
+ "len_variant": 512
+}

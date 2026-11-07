@@ -242,6 +242,11 @@ Correctness: worst rel-err 3.9e-3 over 5 shapes × 4 routings × T ∈ {1..64}.
 | verify chunk 16 | 192.6 | 279.2 | **+44.9%** |
 
 ### Autoresearch round 4: MXFP4 (gpt-oss expert format) → `metal_mxfp4_moe`
+
+> **Correction (2026-11-07, 04:00):** the agent porting gpt-oss end-to-end found that the T≥8 MMA path stored the E8M0 scale (with the 2^14 fold) in a single half. That overflows to inf for scale bytes ≥ 129, which ~11% of the real gpt-oss down_proj groups have; random-normal lab weights never reach it.
+> - **Fix:** split the scale into two exact half factors (`hs2`).
+> - **New test:** `tests/test_mxfp4_large_scales.py` fails on the old kernel and passes on the new one.
+> - **Effect on speed:** re-measured after the fix (5×6), the T≥8 speedups drop. Qwen3 traces T=8/16/32 go from 1.786/2.064/2.424 to **1.644/1.885/2.148**. gpt-oss T=8/16 go from 1.521/1.688 to **1.504/1.559**. T<8 is unaffected because it does not use the MMA path. The table below shows the pre-fix numbers for T≥8 and is superseded by these.
 - **Format:** MLX `mode="mxfp4"`. Each value is FP4 E2M1, with one E8M0 scale per 32 values and no bias, giving **4.25 bits/weight**. That is 6% fewer bytes than affine int4 g64.
 - **Baseline:** the real mlx-lm SwitchGLU quantized to MXFP4. The candidate started as that same wrapper (score 1.000 ± 0.003; this doubles as the bench's sanity check).
 - **Agent result:** score **1.398** after 7 bench runs.

@@ -45,3 +45,13 @@ Część kerneli powstała w pętli autoresearch (agent LLM). Zabezpieczenia prz
 - świeży proces na każdy pomiar.
 
 Każdy wynik agenta zweryfikowaliśmy niezależnie, z większą liczbą powtórzeń. Raz agent zaniżył wynik (nie zmierzył T = 32). Raz jego reguła akceptacji odrzuciła poprawny kernel.
+
+## 7.6. Wagi syntetyczne a rzeczywiste checkpointy
+
+**Błąd.** Kernel MXFP4 przechodził wszystkie testy na losowych wagach, a mimo to był błędny dla prawdziwego checkpointu gpt-oss. Ścieżka MMA zapisywała skalę E8M0, przemnożoną przez 2^14, w jednej liczbie typu half. Przy bajtach skali ≥ 129 wartość ta przepełniała zakres half i dawała inf. W rzeczywistym gpt-oss dotyczy to około 11% grup w projekcji down. Wagi losowe o rozkładzie normalnym nigdy nie dają tak dużych skal.
+
+**Wykrycie i poprawka.** Błąd ujawnił dopiero test na pełnym modelu. Poprawka rozbija skalę na dwa czynniki half, z których każdy jest dokładny. Test regresyjny `tests/test_mxfp4_large_scales.py` wymusza duże bajty skali i obejmuje wszystkie trzy reżimy (T = 1, małe T, T ≥ 8).
+
+**Wpływ na wyniki.** Poprawność kosztuje 8–11% przyspieszenia przy T ≥ 16.
+
+**Wniosek metodyczny.** Bramka poprawności musi obejmować rozkłady wag z prawdziwych modeli, nie tylko wagi losowe.

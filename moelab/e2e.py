@@ -10,6 +10,7 @@ Rounds alternate stock/variant to spread thermal drift. Greedy outputs are compa
 import argparse
 import json
 import time
+from types import SimpleNamespace
 
 import mlx.core as mx
 import numpy as np
@@ -23,7 +24,9 @@ PROMPT = "Explain, step by step, how a mixture-of-experts transformer layer rout
 
 
 def patch(model, mod):
-    """Swap expert compute of every Qwen3MoeSparseMoeBlock for `mod.run` at decode."""
+    """Swap expert compute of every Qwen3MoeSparseMoeBlock (or gpt-oss MLPBlock) for `mod.run` at decode."""
+    if getattr(model, "model_type", None) == "gpt_oss":
+        return _patch_gptoss(model, mod)
     blocks = [l.mlp for l in model.layers if hasattr(l.mlp, "switch_mlp")]
     cls = type(blocks[0])
     stock = cls.__dict__.get("_stock_call", cls.__call__)  # idempotent re-patching
@@ -46,6 +49,31 @@ def patch(model, mod):
             scores /= mx.sum(scores, axis=-1, keepdims=True)
         y = mod.run(self._variant_state, x.reshape(T, -1), inds.reshape(T, k),
                     scores.reshape(T, k).astype(mx.float32))
+        return y.reshape(x.shape)
+
+    cls.__call__ = call
+    return cls, len(blocks)
+
+
+def _patch_gptoss(model, mod):
+    """gpt-oss MLPBlock: router = Linear(bias) -> mlx_topk -> softmax over the top-k (as stock);
+    experts = SwitchGLU(bias=True, mxfp4) with clamped SwiGLU, run by `mod.run(mod.state(experts), ...)`."""
+    from mlx_lm.models.gpt_oss import mlx_topk
+    blocks = [l.mlp for l in model.layers]
+    cls = type(blocks[0])
+    stock = cls.__dict__.get("_stock_call", cls.__call__)  # idempotent re-patching
+    cls._stock_call = stock
+    for b in blocks:
+        b._variant_state = mod.state(b.experts)  # asserts mode/group_size/bits
+
+    def call(self, x):
+        T = x.size // x.shape[-1]
+        if T > MAX_T or not getattr(cls, "_use_variant", False):
+            return stock(self, x)
+        k = self.num_experts_per_tok
+        vals, inds = mlx_topk(self.router(x), k=k, axis=-1)
+        w = mx.softmax(vals, axis=-1, precise=True)
+        y = mod.run(self._variant_state, x.reshape(T, -1), inds.reshape(T, k), w.reshape(T, k).astype(mx.float32))
         return y.reshape(x.shape)
 
     cls.__call__ = call
@@ -81,8 +109,11 @@ def teacher_forced(model, tok, cls, text, use_variant):
 def quality_check(model, tok, cls, variant_path):
     """Stock vs variant vs fp32 truth (same dequantized weights), teacher-forced."""
     text = open(__file__.replace("e2e.py", "data/quality_corpus.txt")).read()[:3000]  # frozen corpus (audit fix)
-    truth_mod = load_variant(__file__.replace("e2e.py", "variants/fp32_truth_q4.py"))
     var_mod = load_variant(variant_path)
+    if getattr(model, "model_type", None) == "gpt_oss":  # fp32 truth with biases + clamped SwiGLU
+        truth_mod = SimpleNamespace(state=var_mod.state, run=var_mod.reference)
+    else:
+        truth_mod = load_variant(__file__.replace("e2e.py", "variants/fp32_truth_q4.py"))
     runs = {"stock": (False, None)}
     runs["variant"] = (True, var_mod)
     runs["fp32"] = (True, truth_mod)

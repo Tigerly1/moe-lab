@@ -20,7 +20,7 @@ Production kernel: `moelab/variants/mlx/metal_q4_moe.py`, a dispatcher over `met
 - **MoE layer at T>1, real routing traces:** 1.72× at T=8, 1.98× at T=16, 2.44× at T=32. Held-out shapes: Mixtral 1.95× at T=8, Qwen3-235B 1.27× at T=16. Consecutive tokens share ~45% of experts, and the kernel reads each expert once per tile.
 - **MXFP4 (gpt-oss format):** `metal_mxfp4_moe` beats mlx-lm's MXFP4 path:
   - 1.16× (gpt-oss) and 1.26× (Qwen3) at T=1;
-  - up to 2.42× at T=32;
+  - up to 2.15× at T=32, after a scale-overflow fix found on the real gpt-oss checkpoint;
   - held-out shapes (gpt-oss-120b, Mixtral, DeepSeek-V2-Lite) at 1.05–1.92×.
 - **Mechanism at T=1:**
   - About half the gain is MLX's qmv fast path requiring K % 512 == 0, which Qwen3 (K=768) and gpt-oss (2880) miss.
