@@ -18,15 +18,11 @@ Production kernels:
 
 | model | plain decode | verify step, 4 tokens | verify step, 16 tokens | chunk of 32 tokens |
 |---|---|---|---|---|
-| Qwen3-30B-A3B-4bit | 91.5 → **99.8 tok/s (+9.0%)** | +23% | +48% | +84% |
-| gpt-oss-20b-MXFP4 | 75.3 → **81.3 tok/s (+8.0%)** | +27% | +70% | +52% |
-| DeepSeek-V2-Lite-4bit (shared experts, MLA) | 126.4 → **135.5 tok/s (+7.2%)** | +13.7% | +33.5% | +63.5% |
+| Qwen3-30B-A3B-4bit | 91.5–91.7 → **99.7–99.8 tok/s (+8.6–9.0%)** | +23% | +48% | +83% |
+| gpt-oss-20b-MXFP4 | 75.2–75.3 → **81.3 tok/s (+8.0–8.1%)** | +27% | +69% | +52% |
+| DeepSeek-V2-Lite-4bit (shared experts, MLA) | 126.3–126.4 → **135.5 tok/s (+7.2–7.3%)** | +13.6% | +33.4% | +63.3% |
 
-Sources:
-- The Qwen3 row and the gpt-oss plain/verify cells were reproduced in one clean run (`scripts/reproduce_headline.sh`, seeds 5000+, `runs/repro/`, 05:46).
-- The gpt-oss chunk-32 cell is `runs/e2e_prefill_chunks_gptoss_r6.json`.
-- The DeepSeek row is `runs/e2e_dsv2_plain_r6.json` and `runs/e2e_dsv2_verify.json`.
-- All were measured on the final kernels.
+Every cell was reproduced on the final code in one clean run of `scripts/reproduce_headline.sh` (2026-11-07 06:22–06:33, seeds 5000+, output in `runs/repro/`). Ranges cover this run and the earlier 05:46 run.
 
 - Quality: perplexity is within 0.1% of stock on all three models. Top-1 agreement with an fp32-expert reference is as high as stock or higher. On DeepSeek our perplexity is 0.1% further from fp32 than stock (41.40 vs 41.35; fp32 41.26). Files: `runs/e2e_dsv2_quality.json`; Qwen3 and gpt-oss in `docs/RESULTS.md`.
 - Plain-decode greedy outputs are identical to stock only on DeepSeek (225/225 tokens). On Qwen3 and gpt-oss they diverge after ~22 tokens (bf16 noise); both arms still decode the same number of tokens.

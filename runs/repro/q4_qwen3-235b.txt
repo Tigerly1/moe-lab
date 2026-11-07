@@ -1,3 +1,3 @@
 A=mlxlm_switchglu_q4.py  B=metal_q4_moe.py  shape=qwen3-235b-a22b bfloat16 uniform  4 launches x 4 rounds
-T=  1  A    382.5us  B    359.1us  B is 1.065x  [95% CI 1.063-1.068, by launch]  err A 7.0e-03 B 3.4e-03
-T= 16  A   4417.4us  B   3500.1us  B is 1.262x  [95% CI 1.248-1.269, by launch]  err A 6.8e-03 B 3.4e-03
+T=  1  A    383.6us  B    359.2us  B is 1.068x  [95% CI 1.065-1.070, by launch]  err A 7.0e-03 B 3.4e-03
+T= 16  A   4428.4us  B   3501.6us  B is 1.265x  [95% CI 1.248-1.268, by launch]  err A 6.8e-03 B 3.4e-03

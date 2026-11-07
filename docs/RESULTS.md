@@ -532,6 +532,21 @@ The audit verified as sound:
 - the generate CLI;
 - the reproduction outputs.
 
+## Final reproduction #2 on the final code (after audit 3), 2026-11-07 06:22–06:33
+`scripts/reproduce_headline.sh` was extended to cover DeepSeek, gpt-oss chunk-32 and the crossover. Output: `runs/repro/`, `runs/repro_log.txt`.
+
+| check | result |
+|---|---|
+| tests incl. full-model multi-token (3 models) | **346 passed**, 3 xfailed |
+| int4 Qwen3 traces T=1/8/16/32 | 1.200 / 1.724 / 2.054 / 2.455 |
+| MXFP4 Qwen3 traces T=1/8/16/32 | 1.264 / 1.736 / 2.060 / 2.404 |
+| int4 Qwen3-235B T=1/16 | 1.068 / 1.265 |
+| T=1 slope (Qwen3) | mlx-lm 76.4% / v4 93.4% of floor, 1.222× |
+| Qwen3 e2e plain / verify 4 / 16 / 32 | +8.6% / +22.5% / +48.3% / +83.4% |
+| gpt-oss e2e plain / verify 4 / 16 / 32 | +8.1% / +27.4% / +69.4% / +52.4% |
+| DeepSeek e2e plain (identical 225/225) / verify 4 / 16 / 32 | +7.3% / +13.6% / +33.4% / +63.3% |
+| crossover uniform T=64/256/512 | 1.867 / 1.087 / 0.990 |
+
 ## Open problems / next steps
 1. ~~Small-batch + skewed routing~~ → solved by `metal_q4_tiles_mma` (round 1). Remaining: gpt-oss (d % 128 ≠ 0) tail path, T=2 with uniform routing (round 3 running).
 2. **Regime dispatcher:** v31 for T ≤ 16, sorted `gather_qmm` above. The crossover sits around T≈16–32 on Qwen3 (RQ1).

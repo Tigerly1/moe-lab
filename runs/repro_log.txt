@@ -1,38 +1,53 @@
 Now drawing from 'AC Power'
 == 1. correctness (unit, large/tiny scales, real checkpoints, full-model multi-token)
-327 passed, 3 xfailed in 22.33s
+346 passed, 3 xfailed in 31.95s
 == 2. layer level, real traces, fresh seeds, CI by launch
 A=mlxlm_switchglu_q4.py  B=metal_q4_moe.py  shape=qwen3-30b-a3b bfloat16 trace  6 launches x 4 rounds
-T=  1  A    134.0us  B    111.1us  B is 1.206x  [95% CI 1.196-1.214, by launch]  err A 6.7e-03 B 3.5e-03
-T=  8  A    636.8us  B    370.5us  B is 1.719x  [95% CI 1.665-1.752, by launch]  err A 6.4e-03 B 3.5e-03
-T= 16  A   1183.9us  B    577.9us  B is 2.049x  [95% CI 1.893-2.109, by launch]  err A 6.6e-03 B 3.5e-03
-T= 32  A   2266.2us  B    925.8us  B is 2.448x  [95% CI 2.268-2.569, by launch]  err A 6.6e-03 B 3.4e-03
+T=  1  A    133.1us  B    110.9us  B is 1.200x  [95% CI 1.187-1.207, by launch]  err A 6.7e-03 B 3.5e-03
+T=  8  A    633.7us  B    367.7us  B is 1.724x  [95% CI 1.670-1.751, by launch]  err A 6.4e-03 B 3.5e-03
+T= 16  A   1183.5us  B    576.1us  B is 2.054x  [95% CI 1.887-2.113, by launch]  err A 6.6e-03 B 3.5e-03
+T= 32  A   2267.2us  B    923.6us  B is 2.455x  [95% CI 2.271-2.566, by launch]  err A 6.6e-03 B 3.4e-03
 A=mlxlm_switchglu_mxfp4.py  B=metal_mxfp4_moe.py  shape=qwen3-30b-a3b bfloat16 trace  6 launches x 4 rounds
-T=  1  A    134.9us  B    106.9us  B is 1.262x  [95% CI 1.250-1.268, by launch]  err A 6.2e-03 B 2.3e-03
-T=  8  A    641.9us  B    370.3us  B is 1.734x  [95% CI 1.698-1.763, by launch]  err A 6.0e-03 B 2.3e-03
-T= 16  A   1196.6us  B    578.7us  B is 2.068x  [95% CI 1.948-2.103, by launch]  err A 6.0e-03 B 2.4e-03
-T= 32  A   2288.3us  B    952.0us  B is 2.404x  [95% CI 2.240-2.505, by launch]  err A 6.0e-03 B 2.3e-03
+T=  1  A    135.2us  B    107.0us  B is 1.264x  [95% CI 1.254-1.271, by launch]  err A 6.2e-03 B 2.3e-03
+T=  8  A    642.6us  B    370.1us  B is 1.736x  [95% CI 1.696-1.755, by launch]  err A 6.0e-03 B 2.3e-03
+T= 16  A   1195.0us  B    580.0us  B is 2.060x  [95% CI 1.938-2.100, by launch]  err A 6.0e-03 B 2.4e-03
+T= 32  A   2290.0us  B    952.7us  B is 2.404x  [95% CI 2.243-2.513, by launch]  err A 6.0e-03 B 2.3e-03
 A=mlxlm_switchglu_q4.py  B=metal_q4_moe.py  shape=qwen3-235b-a22b bfloat16 uniform  4 launches x 4 rounds
-T=  1  A    382.5us  B    359.1us  B is 1.065x  [95% CI 1.063-1.068, by launch]  err A 7.0e-03 B 3.4e-03
-T= 16  A   4417.4us  B   3500.1us  B is 1.262x  [95% CI 1.248-1.269, by launch]  err A 6.8e-03 B 3.4e-03
+T=  1  A    383.6us  B    359.2us  B is 1.068x  [95% CI 1.065-1.070, by launch]  err A 7.0e-03 B 3.4e-03
+T= 16  A   4428.4us  B   3501.6us  B is 1.265x  [95% CI 1.248-1.268, by launch]  err A 6.8e-03 B 3.4e-03
 == 3. T=1 slope timing, non-repeating routing
-qwen3-30b-a3b T=1 uniform windows=80: residual-add-only slope 2.5us (fixed 192us)
-  mlxlm_switchglu_q4     per-call   113.4us  minus residual   111.0us  fixed/eval    203us  floor   85.1us   76.7% of floor@250  speedup 1.000x
-  metal_q4_decode_v4     per-call    93.6us  minus residual    91.1us  fixed/eval    133us  floor   85.1us   93.4% of floor@250  speedup 1.218x
+qwen3-30b-a3b T=1 uniform windows=80: residual-add-only slope 3.0us (fixed 169us)
+  mlxlm_switchglu_q4     per-call   114.3us  minus residual   111.3us  fixed/eval    201us  floor   85.1us   76.4% of floor@250  speedup 1.000x
+  metal_q4_decode_v4     per-call    94.1us  minus residual    91.1us  fixed/eval    135us  floor   85.1us   93.4% of floor@250  speedup 1.222x
 == 4. end to end
-Fetching 12 files:   0%|          | 0/12 [00:00<?, ?it/s]Fetching 12 files: 100%|██████████| 12/12 [00:00<00:00, 2884.50it/s]
-stock   91.5 tok/s  [91.54502705095322, 91.51031792244837, 91.63815894386603]
-variant 99.8 tok/s  [99.77965001195929, 99.75029226844573, 99.81100077429738]
-speedup 1.090x | greedy tokens identical: 44/512 (first diff at 22)
-Fetching 12 files:   0%|          | 0/12 [00:00<?, ?it/s]Fetching 12 files: 100%|██████████| 12/12 [00:00<00:00, 2161.73it/s]
-verify chunk=4: stock 127.2 tok/s  variant 156.3 tok/s  speedup 1.228x  (248 steps, rounds {'stock': [127.2047969875067, 127.20351858240157, 128.03438617021914], 'variant': [156.26512897885053, 156.18827244553663, 156.32950099236834]})
-verify chunk=16: stock 194.9 tok/s  variant 289.1 tok/s  speedup 1.484x  (62 steps, rounds {'stock': [195.06480632483562, 194.8806056575836, 194.8589516945344], 'variant': [288.9787558700126, 289.40666227737233, 289.1316519584208]})
-verify chunk=32: stock 237.3 tok/s  variant 435.6 tok/s  speedup 1.835x  (31 steps, rounds {'stock': [237.2151585834881, 237.34391818588674, 237.43421926809694], 'variant': [435.7285714902681, 435.2663201402284, 435.5689148199791]})
-Fetching 10 files:   0%|          | 0/10 [00:00<?, ?it/s]Fetching 10 files: 100%|██████████| 10/10 [00:00<00:00, 2440.25it/s]
-stock   75.3 tok/s  [75.1025573421999, 75.28271452997893, 75.29076831500747]
-variant 81.3 tok/s  [81.29501476148313, 81.3207280380443, 81.28460743160733]
-speedup 1.080x | greedy tokens identical: 29/512 (first diff at 24)
-Fetching 10 files:   0%|          | 0/10 [00:00<?, ?it/s]Fetching 10 files: 100%|██████████| 10/10 [00:00<00:00, 2430.07it/s]
-verify chunk=4: stock 126.2 tok/s  variant 160.8 tok/s  speedup 1.274x  (248 steps, rounds {'stock': [126.3494790981868, 126.24016124902542, 126.01683112839311], 'variant': [160.84451693774844, 160.67322730140964, 160.78710693378747]})
-verify chunk=16: stock 174.8 tok/s  variant 296.5 tok/s  speedup 1.696x  (62 steps, rounds {'stock': [174.7571656870479, 174.79133238485966, 174.75279798159008], 'variant': [296.45449612131193, 296.3923088139387, 296.45183832362727]})
+Fetching 12 files:   0%|          | 0/12 [00:00<?, ?it/s]Fetching 12 files: 100%|██████████| 12/12 [00:00<00:00, 2635.16it/s]
+stock   91.7 tok/s  [91.73988499463339, 91.7308943426488, 91.64142910329846]
+variant 99.7 tok/s  [99.65086273144489, 99.66666982554698, 99.58971759510341]
+speedup 1.086x | greedy tokens identical: 44/512 (first diff at 22)
+Fetching 12 files:   0%|          | 0/12 [00:00<?, ?it/s]Fetching 12 files: 100%|██████████| 12/12 [00:00<00:00, 2603.00it/s]
+verify chunk=4: stock 127.6 tok/s  variant 156.4 tok/s  speedup 1.225x  (248 steps, rounds {'stock': [127.63909154206897, 127.65845325091188, 127.50249623322098], 'variant': [156.49644324719347, 156.34371930279337, 156.36698646038812]})
+verify chunk=16: stock 195.1 tok/s  variant 289.2 tok/s  speedup 1.483x  (62 steps, rounds {'stock': [195.05930223111778, 195.07188669543126, 195.04976991379024], 'variant': [289.24920550346314, 289.16925237398095, 289.30977417530596]})
+verify chunk=32: stock 237.5 tok/s  variant 435.7 tok/s  speedup 1.834x  (31 steps, rounds {'stock': [237.50072385910144, 237.509762791489, 237.4658776587834], 'variant': [435.68428516631553, 435.67549904947117, 435.64141858433766]})
+Fetching 10 files:   0%|          | 0/10 [00:00<?, ?it/s]Fetching 10 files: 100%|██████████| 10/10 [00:00<00:00, 2262.91it/s]
+stock   75.2 tok/s  [75.18753516956235, 75.17178846217554, 75.21247110299046]
+variant 81.3 tok/s  [81.31001444430048, 80.46954713776971, 81.27059700898818]
+speedup 1.081x | greedy tokens identical: 29/512 (first diff at 24)
+Fetching 10 files:   0%|          | 0/10 [00:00<?, ?it/s]Fetching 10 files: 100%|██████████| 10/10 [00:00<00:00, 2516.23it/s]
+verify chunk=4: stock 126.2 tok/s  variant 160.7 tok/s  speedup 1.274x  (248 steps, rounds {'stock': [125.9560129152123, 126.2694118708931, 126.16749514524851], 'variant': [160.68411044886122, 160.84116035538923, 160.70222116977135]})
+verify chunk=16: stock 174.9 tok/s  variant 296.4 tok/s  speedup 1.694x  (62 steps, rounds {'stock': [174.832760902923, 174.91971733814367, 175.16226587349718], 'variant': [296.461845974779, 296.37769393391085, 296.2234570013549]})
+Fetching 10 files:   0%|          | 0/10 [00:00<?, ?it/s]Fetching 10 files: 100%|██████████| 10/10 [00:00<00:00, 2574.61it/s]
+verify chunk=32: stock 284.1 tok/s  variant 432.9 tok/s  speedup 1.524x  (31 steps, rounds {'stock': [284.45085056385074, 284.00769696045955, 284.09248875713695], 'variant': [433.72832342096285, 432.8901137152018, 432.7494094886077]})
+Fetching 10 files:   0%|          | 0/10 [00:00<?, ?it/s]Fetching 10 files: 100%|██████████| 10/10 [00:00<00:00, 2863.79it/s]
+stock   126.3 tok/s  [126.3077028020543, 126.39337283045398, 126.31172090665098]
+variant 135.5 tok/s  [135.64825623423422, 135.36297581952692, 135.49456192642947]
+speedup 1.073x | greedy tokens identical: 225/225 (first diff at None)
+Fetching 10 files:   0%|          | 0/10 [00:00<?, ?it/s]Fetching 10 files: 100%|██████████| 10/10 [00:00<00:00, 2793.97it/s]
+verify chunk=4: stock 185.5 tok/s  variant 210.7 tok/s  speedup 1.136x  (248 steps, rounds {'stock': [185.361164343904, 185.46608660566923, 185.4941848805149], 'variant': [210.7952639288221, 210.74959805657966, 210.73016811354185]})
+verify chunk=16: stock 257.5 tok/s  variant 343.6 tok/s  speedup 1.334x  (62 steps, rounds {'stock': [257.40908503231844, 257.7052160611831, 257.53484955060463], 'variant': [343.4392734147879, 343.68393431021445, 343.58900624401304]})
+verify chunk=32: stock 325.0 tok/s  variant 530.8 tok/s  speedup 1.633x  (31 steps, rounds {'stock': [325.4131337971828, 324.9754616416456, 324.86130483755704], 'variant': [530.831019313686, 530.658228714442, 530.9272481159404]})
+== 5. crossover (layer, uniform routing)
+A=mlxlm_switchglu_q4.py  B=metal_q4_moe.py  shape=qwen3-30b-a3b bfloat16 uniform  3 launches x 3 rounds
+T= 64  A   3918.6us  B   2098.9us  B is 1.867x  [95% CI 1.863-1.887, by launch]  err A 6.3e-03 B 3.4e-03
+T=256  A   5774.4us  B   5312.3us  B is 1.087x  [95% CI 1.087-1.096, by launch]  err A 6.4e-03 B 3.5e-03
+T=512  A   9930.1us  B  10031.9us  B is 0.990x  [95% CI 0.987-0.993, by launch]  err A 6.3e-03 B 3.5e-03
 done: runs/repro
