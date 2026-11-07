@@ -6,19 +6,24 @@ E2M1 -> half is exact by bit placement: sign -> bit 15, the 3 magnitude bits -> 
 (exponent field e, mantissa m). That half equals value * 2^-14 (also for e=0: subnormal),
 so the 2^14 is folded into the group scale: float with exponent field s + 14.
 
-All T: v4-style per-slot GEMV (gate+up+SiLU fused, one simdgroup per row; down with LPR lanes per
-row and the k slots of a token reduced in threadgroup memory -> 2 dispatches). No explicit expert
-reuse at T>1 (an expert-tiled scalar path was slower: 0.71-0.91x); repeated experts hit in cache.
+T == 1: v4-style GEMV (gate+up+SiLU fused, one simdgroup per row; down with LPR lanes per row and
+the k slots reduced in threadgroup memory -> 2 dispatches). At the bandwidth floor.
+1 < T < T_GROUP: same GEMVs per slot, but slots of one expert are paired in-kernel (rank parity scan)
+so a pair shares every weight decode (the scalar path is ALU-bound once weights hit in cache);
+down writes w*y per slot (fp32) and a combine kernel sums k.
+T >= T_GROUP: map prepass groups slots by expert (<= G); groups of 1-2 run the scalar GEMV,
+groups of >= 3 run simdgroup_matrix 8x8 MMA (half A/B, fp32 acc) with one decode per group.
 """
 import mlx.core as mx
 
-META = {"name": "ar_mxfp4", "description": "custom Metal MXFP4: v4-style per-slot GEMV, 2 dispatches"}
+META = {"name": "ar_mxfp4", "description": "custom Metal MXFP4: v4 GEMV (T=1), paired-slot GEMV (T<8), expert groups + simdgroup MMA (T>=8)"}
 MODE, GS, BITS = "mxfp4", 32, 4
 W_BITS = 4 + 8 / 32
 R_UP, R_DOWN = 1, 2
 SG_PER_TG = 4
 ITERS = 3
 RT_UP, RT_DOWN = 16, 32  # T > 1: rows per threadgroup (8 simdgroups)
+T_GROUP = 8  # T >= T_GROUP: map prepass + groups of <= G (scalar / MMA); 1 < T < T_GROUP: pairs
 G = 8  # T > 1: max group size (slots of one expert sharing weight decode)
 
 HEADER = """
@@ -300,6 +305,111 @@ DOWN_G_SRC = GROUP_SCAN + """
     }
 """
 
+PAIR_SCAN = """
+    uint rank = 0, nxt = TK;
+    for (uint q = lane; q < TK; q += 32) {
+        bool same = idx[q] == e;
+        rank += (same && q < slot) ? 1u : 0u;
+        if (same && q > slot) nxt = min(nxt, q);
+    }
+    rank = simd_sum(rank); nxt = simd_min(nxt);
+    if (rank & 1u) return;
+"""
+# paired down: writes w * y per slot (fp32); a combine kernel sums the k slots of each token
+DOWN_P_SRC = """
+    constexpr uint RB = R * 32 / LPR;
+    uint lane = thread_index_in_simdgroup;
+    uint sub = lane % LPR;
+    uint row0 = (thread_position_in_grid.x / 32) * RB + (lane / LPR) * R;
+    uint slot = thread_position_in_grid.y;
+    int e = idx[slot];
+""" + PAIR_SCAN + """
+    bool ok = row0 < D;
+    constexpr uint NC = F / 32;
+    size_t r0 = (size_t)e * D + (ok ? row0 : 0);
+    float hs[32], ht[32];
+    float aa[R] = {0.f}, ab[R] = {0.f};
+    if (nxt == TK) {
+        for (uint c = sub; ok && c < NC; c += LPR) {
+            load_x32(h + slot * F + c * 32, hs);
+            for (uint r = 0; r < R; ++r) {
+                size_t q = (r0 + r) * NC + c;
+                aa[r] += e8s(ds[q]) * dot_fp4x32(hs, ((const device uint4*)dq)[q]);
+            }
+        }
+    } else {
+        for (uint c = sub; ok && c < NC; c += LPR) {
+            load_x32(h + slot * F + c * 32, hs);
+            load_x32(h + nxt * F + c * 32, ht);
+            for (uint r = 0; r < R; ++r) {
+                size_t q = (r0 + r) * NC + c;
+                float a, b, sd = e8s(ds[q]);
+                dot2_fp4x32(hs, ht, ((const device uint4*)dq)[q], a, b);
+                aa[r] += sd * a; ab[r] += sd * b;
+            }
+        }
+    }
+    float wa = wts[slot], wb = wts[min(nxt, uint(TK - 1))];
+    for (uint r = 0; r < R; ++r) {
+        float a = aa[r], b = ab[r];
+        for (uint o = LPR / 2; o > 0; o >>= 1) { a += simd_shuffle_xor(a, o); b += simd_shuffle_xor(b, o); }
+        if (sub == 0 && ok) {
+            yp[slot * D + row0 + r] = wa * a;
+            if (nxt < TK) yp[nxt * D + row0 + r] = wb * b;
+        }
+    }
+"""
+# 1 < T < T_GROUP: slots of the same expert are paired in-kernel (rank among same-expert slots: even rank leads,
+# odd rank returns); a pair shares every weight decode. Unpaired slots run the plain GEMV.
+GATE_UP_P_SRC = """
+    uint lane = thread_index_in_simdgroup;
+    uint row0 = (thread_position_in_grid.x / 32) * R;
+    uint slot = thread_position_in_grid.y;
+    if (row0 >= F) return;
+    constexpr uint NC = D / 32;
+    int e = idx[slot];
+""" + PAIR_SCAN + """
+    size_t r0 = (size_t)e * F + row0;
+    const device T* xr = x + (slot / K) * D;
+    float xs[32];
+    if (nxt == TK) {
+        float ag[R] = {0.f}, au[R] = {0.f};
+        for (uint c = lane; c < NC; c += 32) {
+            load_x32(xr + c * 32, xs);
+            for (uint r = 0; r < R; ++r) {
+                size_t q = (r0 + r) * NC + c;
+                ag[r] += e8s(gs[q]) * dot_fp4x32(xs, ((const device uint4*)gq)[q]);
+                au[r] += e8s(us[q]) * dot_fp4x32(xs, ((const device uint4*)uq)[q]);
+            }
+        }
+        for (uint r = 0; r < R; ++r) {
+            float g = simd_sum(ag[r]), u = simd_sum(au[r]);
+            if (lane == 0) h[slot * F + row0 + r] = T(g / (1.f + metal::exp(-g)) * u);
+        }
+        return;
+    }
+    const device T* xr2 = x + (nxt / K) * D;
+    float xt[32];
+    float ga[R] = {0.f}, gb[R] = {0.f}, ua[R] = {0.f}, ub[R] = {0.f};
+    for (uint c = lane; c < NC; c += 32) {
+        load_x32(xr + c * 32, xs);
+        load_x32(xr2 + c * 32, xt);
+        for (uint r = 0; r < R; ++r) {
+            size_t q = (r0 + r) * NC + c;
+            float a, b, sg = e8s(gs[q]), su = e8s(us[q]);
+            dot2_fp4x32(xs, xt, ((const device uint4*)gq)[q], a, b); ga[r] += sg * a; gb[r] += sg * b;
+            dot2_fp4x32(xs, xt, ((const device uint4*)uq)[q], a, b); ua[r] += su * a; ub[r] += su * b;
+        }
+    }
+    for (uint r = 0; r < R; ++r) {
+        float g = simd_sum(ga[r]), u = simd_sum(ua[r]), g2 = simd_sum(gb[r]), u2 = simd_sum(ub[r]);
+        if (lane == 0) {
+            h[slot * F + row0 + r] = T(g / (1.f + metal::exp(-g)) * u);
+            h[nxt * F + row0 + r] = T(g2 / (1.f + metal::exp(-g2)) * u2);
+        }
+    }
+"""
+
 COMBINE_SRC = """
     uint i = thread_position_in_grid.x;
     if (i >= NT * D) return;
@@ -313,6 +423,10 @@ _k1 = mx.fast.metal_kernel(name="ar_mxfp4_gate_up_v1", input_names=["x", "gq", "
                            output_names=["h"], source=GATE_UP_SRC, header=HEADER)
 _k2 = mx.fast.metal_kernel(name="ar_mxfp4_down_v1", input_names=["h", "dq", "ds", "idx", "wts"],
                            output_names=["y"], source=DOWN_SRC, header=HEADER)
+_k1p = mx.fast.metal_kernel(name="ar_mxfp4_gate_up_p_v1", input_names=["x", "gq", "gs", "uq", "us", "idx"],
+                            output_names=["h"], source=GATE_UP_P_SRC, header=HEADER)
+_k2p = mx.fast.metal_kernel(name="ar_mxfp4_down_p_v1", input_names=["h", "dq", "ds", "idx", "wts"],
+                            output_names=["yp"], source=DOWN_P_SRC, header=HEADER)
 _k0 = mx.fast.metal_kernel(name="ar_mxfp4_map_v1", input_names=["idx"], output_names=["tl"], source=MAP_SRC)
 _k1g = mx.fast.metal_kernel(name="ar_mxfp4_gate_up_g_v3", input_names=["x", "gq", "gs", "uq", "us", "idx", "tl"],
                             output_names=["h"], source=GATE_UP_G_SRC, header=HEADER)
@@ -351,6 +465,18 @@ def run(s, x, idx, wts):
     (gq, gs), (uq, us), (dq, ds) = s["g"], s["u"], s["d"]
     F, D = gq.shape[1], dq.shape[1]
     base = [("T", x.dtype), ("D", D), ("F", F), ("K", k)]
+    if 1 < T < T_GROUP:   # few repeated experts: pairs share a decode, no map prepass
+        TK = T * k
+        h = _k1p(inputs=[x, gq, gs, uq, us, idx], template=base + [("R", R_UP), ("TK", TK)],
+                 grid=(32 * F // R_UP, TK, 1), threadgroup=(32 * SG_PER_TG, 1, 1),
+                 output_shapes=[(TK, F)], output_dtypes=[x.dtype])[0]
+        lpr = _lpr(F // 32)
+        rb = R_DOWN * 32 // lpr
+        yp = _k2p(inputs=[h, dq, ds, idx, wts.flatten()], template=base + [("R", R_DOWN), ("LPR", lpr), ("TK", TK)],
+                  grid=(32 * (-(-D // rb)), TK, 1), threadgroup=(32 * SG_PER_TG, 1, 1),
+                  output_shapes=[(TK, D)], output_dtypes=[mx.float32])[0]
+        return _k3(inputs=[yp], template=[("T", x.dtype), ("D", D), ("K", k), ("NT", T)],
+                   grid=(T * D, 1, 1), threadgroup=(256, 1, 1), output_shapes=[(T, D)], output_dtypes=[x.dtype])[0]
     if T > 1:
         TK = T * k
         tl = _k0(inputs=[idx], template=[("TK", TK), ("G", G)], grid=(TK, 1, 1), threadgroup=(min(TK, 256), 1, 1),
