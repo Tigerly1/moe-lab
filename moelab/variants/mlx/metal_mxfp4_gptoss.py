@@ -52,35 +52,38 @@ def _sub(src, *pairs):
 
 
 def _a(g, u, i):
-    """silu-gate expression of the base kernel -> act<ACT>(g + bg[i], u + bu[i])"""
-    return f"{g} / (1.f + metal::exp(-{g})) * {u}", f"act<ACT>({g} + bg[{i}], {u} + bu[{i}])"
+    """base kernel's swiglu(g, u) (which applies the deferred 2^14 E8M0 factor itself) ->
+    act<ACT>(g*2^14 + bg[i], u*2^14 + bu[i]): biases are added after the factor."""
+    return f"T(swiglu({g}, {u}))", f"T(act<ACT>({g} * 0x1p14f + bg[{i}], {u} * 0x1p14f + bu[{i}]))"
 
 
+# Down: base computes y = (w * 2^14) * a with a = unscaled partial, so w*(a*2^14 + bd) = (w*2^14)*(a + bd*2^-14).
 GATE_UP_SRC = _sub(_b.GATE_UP_SRC, (*_a("g", "u", "r0 + r"), 1))
 GATE_UP_P_SRC = _sub(_b.GATE_UP_P_SRC, (*_a("g", "u", "r0 + r"), 2), (*_a("g2", "u2", "r0 + r"), 1))
 GATE_UP_G_SRC = _sub(_b.GATE_UP_G_SRC, (*_a("ga", "ua", "rr"), 1), (*_a("gb", "ub", "rr"), 1),
                      (*_a("g", "u", "rf"), 1))
-DOWN_SRC = _sub(_b.DOWN_SRC, ("= w * a;", "= w * (a + bd[r0 + r]);", 1))
-DOWN_P_SRC = _sub(_b.DOWN_P_SRC, ("= wa * a;", "= wa * (a + bd[r0 + r]);", 1),
-                  ("= wb * b;", "= wb * (b + bd[r0 + r]);", 1))
-DOWN_G_SRC = _sub(_b.DOWN_G_SRC, ("= wts[slot] * a;", "= wts[slot] * (a + bd[rr]);", 1),
-                  ("= wts[m[1]] * b2;", "= wts[m[1]] * (b2 + bd[rr]);", 1),
-                  ("= wts[m[fn + i]] * a;", "= wts[m[fn + i]] * (a + bd[rf]);", 1))
+DOWN_SRC = _sub(_b.DOWN_SRC, ("= w * a;", "= w * (a + bd[r0 + r] * 0x1p-14f);", 1))
+DOWN_P_SRC = _sub(_b.DOWN_P_SRC, ("= wa * a;", "= wa * (a + bd[r0 + r] * 0x1p-14f);", 1),
+                  ("= wb * b;", "= wb * (b + bd[r0 + r] * 0x1p-14f);", 1))
+DOWN_G_SRC = _sub(_b.DOWN_G_SRC,
+                  ("= wts[slot] * 0x1p14f * a;", "= wts[slot] * (0x1p14f * a + bd[rr]);", 1),
+                  ("= wts[m[1]] * 0x1p14f * b2;", "= wts[m[1]] * (0x1p14f * b2 + bd[rr]);", 1),
+                  ("= wts[m[fn + i]] * 0x1p14f * a;", "= wts[m[fn + i]] * (0x1p14f * a + bd[rf]);", 1))
 
-_k1 = mx.fast.metal_kernel(name="mgo_gate_up_v1", input_names=["x", "gq", "gs", "uq", "us", "bg", "bu", "idx"],
+_k1 = mx.fast.metal_kernel(name="mgo_gate_up_v2", input_names=["x", "gq", "gs", "uq", "us", "bg", "bu", "idx"],
                            output_names=["h"], source=GATE_UP_SRC, header=HEADER)
-_k2 = mx.fast.metal_kernel(name="mgo_down_v1", input_names=["h", "dq", "ds", "bd", "idx", "wts"],
+_k2 = mx.fast.metal_kernel(name="mgo_down_v2", input_names=["h", "dq", "ds", "bd", "idx", "wts"],
                            output_names=["y"], source=DOWN_SRC, header=HEADER)
-_k1p = mx.fast.metal_kernel(name="mgo_gate_up_p_v1", input_names=["x", "gq", "gs", "uq", "us", "bg", "bu", "idx"],
+_k1p = mx.fast.metal_kernel(name="mgo_gate_up_p_v2", input_names=["x", "gq", "gs", "uq", "us", "bg", "bu", "idx"],
                             output_names=["h"], source=GATE_UP_P_SRC, header=HEADER)
-_k2p = mx.fast.metal_kernel(name="mgo_down_p_v1", input_names=["h", "dq", "ds", "bd", "idx", "wts"],
+_k2p = mx.fast.metal_kernel(name="mgo_down_p_v2", input_names=["h", "dq", "ds", "bd", "idx", "wts"],
                             output_names=["yp"], source=DOWN_P_SRC, header=HEADER)
-_k0 = mx.fast.metal_kernel(name="mgo_map_v1", input_names=["idx"], output_names=["tl"], source=_b.MAP_SRC)
-_k1g = mx.fast.metal_kernel(name="mgo_gate_up_g_v1", input_names=["x", "gq", "gs", "uq", "us", "bg", "bu", "idx", "tl"],
+_k0 = mx.fast.metal_kernel(name="mgo_map_v2", input_names=["idx"], output_names=["tl"], source=_b.MAP_SRC)
+_k1g = mx.fast.metal_kernel(name="mgo_gate_up_g_v2", input_names=["x", "gq", "gs", "uq", "us", "bg", "bu", "idx", "tl"],
                             output_names=["h"], source=GATE_UP_G_SRC, header=HEADER)
-_k2g = mx.fast.metal_kernel(name="mgo_down_g_v1", input_names=["h", "dq", "ds", "bd", "idx", "wts", "tl"],
+_k2g = mx.fast.metal_kernel(name="mgo_down_g_v2", input_names=["h", "dq", "ds", "bd", "idx", "wts", "tl"],
                             output_names=["yp"], source=DOWN_G_SRC, header=HEADER)
-_k3 = mx.fast.metal_kernel(name="mgo_combine_v1", input_names=["yp"], output_names=["y"], source=_b.COMBINE_SRC)
+_k3 = mx.fast.metal_kernel(name="mgo_combine_v2", input_names=["yp"], output_names=["y"], source=_b.COMBINE_SRC)
 
 
 def prepare(w_gate, w_up, w_down):

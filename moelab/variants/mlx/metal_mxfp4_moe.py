@@ -1,10 +1,11 @@
-"""Custom Metal MXFP4 MoE kernels (autoresearch round 4).
+"""Custom Metal MXFP4 MoE kernels (autoresearch round 5).
 
 Format: mx.quantize(mode="mxfp4"): uint32 words of 8 E2M1 codes (low nibble first), one E8M0
 scale byte per 32 weights = exactly one uint4 load per scale group.
 E2M1 -> half is exact by bit placement: sign -> bit 15, the 3 magnitude bits -> bits 9..11
-(exponent field e, mantissa m). That half equals value * 2^-14 (also for e=0: subnormal),
-so the 2^14 is folded into the group scale: float with exponent field s + 14.
+(exponent field e, mantissa m). That half equals value * 2^-14 (also for e=0: subnormal).
+The group scale is the float 2^(s-127) (exact for every byte 1..254, applied in fp32); the 2^14 is
+restored once per output (SiLU inputs, routing weight).
 
 T == 1: v4-style GEMV (gate+up+SiLU fused, one simdgroup per row; down with LPR lanes per row and
 the k slots reduced in threadgroup memory -> 2 dispatches). At the bandwidth floor.
@@ -12,7 +13,8 @@ the k slots reduced in threadgroup memory -> 2 dispatches). At the bandwidth flo
 so a pair shares every weight decode (the scalar path is ALU-bound once weights hit in cache);
 down writes w*y per slot (fp32) and a combine kernel sums k.
 T >= T_GROUP: map prepass groups slots by expert (<= G); groups of 1-2 run the scalar GEMV,
-groups of >= 3 run simdgroup_matrix 8x8 MMA (half A/B, fp32 acc) with one decode per group.
+groups of >= 3 run simdgroup_matrix 8x8 MMA (half A/B, fp32 acc) with one decode per group;
+the E8M0 scale is applied in fp32 to each scale group's partial product, never in half.
 """
 import mlx.core as mx
 
@@ -31,8 +33,10 @@ HEADER = """
 inline half2 fp4x2(uint p) {
     return as_type<half2>(((p & 0x00080008u) << 12) | ((p & 0x00070007u) << 9));
 }
-// E8M0 scale byte -> float 2^(s-127) * 2^14
-inline float e8s(uint s) { return as_type<float>((s + 14u) << 23); }
+// E8M0 scale byte -> float 2^(s-127), exact for s = 1..254 (s = 0 -> 0). The decode's 2^-14 is undone once
+// per output (swiglu / routing weight * 2^14), not folded in here: (s + 14) << 23 overflows for s >= 241.
+inline float e8s(uint s) { return as_type<float>(s << 23); }
+inline float swiglu(float g, float u) { g *= 0x1p14f; return g / (1.f + metal::exp(-g)) * (u * 0x1p14f); }
 template <typename T>
 inline void load_x32(const device T* xp, thread float* xs) {
     for (uint i = 0; i < 32; ++i) xs[i] = float(xp[i]);
@@ -63,12 +67,6 @@ inline void dot2_fp4x32(thread const float* xa, thread const float* xb, uint4 w,
     }
     da = a; db = b;
 }
-// float group scale (incl. the 2^14 fold) -> two half factors whose product is exact and finite.
-// Fix (found on the real gpt-oss checkpoint): a single half overflows to inf for E8M0 bytes >= 129.
-inline half2 hs2(float f) {
-    half a = half(metal::clamp(f, 0x1p-24f, 32768.f));
-    return half2(a, half(f / float(a)));
-}
 """
 
 GATE_UP_SRC = """
@@ -92,7 +90,7 @@ GATE_UP_SRC = """
     }
     for (uint r = 0; r < R; ++r) {
         float g = simd_sum(ag[r]), u = simd_sum(au[r]);
-        if (lane == 0) h[slot * F + row0 + r] = T(g / (1.f + metal::exp(-g)) * u);
+        if (lane == 0) h[slot * F + row0 + r] = T(swiglu(g, u));
     }
 """
 
@@ -118,7 +116,7 @@ DOWN_SRC = """
             acc[r] += e8s(ds[q]) * dot_fp4x32(hs, ((const device uint4*)dq)[q]);
         }
     }
-    float w = wts[slot];
+    float w = wts[slot] * 0x1p14f;
     for (uint r = 0; r < R; ++r) {
         float a = acc[r];
         for (uint o = LPR / 2; o > 0; o >>= 1) a += simd_shuffle_xor(a, o);
@@ -137,8 +135,9 @@ DOWN_SRC = """
 # (rank among same-expert slots; rank % 8 == 0 leads, the rest return). Group size n:
 #   1 -> per-slot GEMV (simdgroup j: row row0 + j), 2 -> GEMV with one decode for both slots,
 #   >= 3 -> simdgroup_matrix 8x8 (half A/B, fp32 acc), the 8 simdgroups split K, reduced in threadgroup
-#   memory. MMA k-remap inside a 64-block: k = 8c + s (c = fragment col, s = step), so each lane's A
-#   pair comes from words c, c+1 (same scale group) and its B values are 8 contiguous activations.
+#   memory. MMA k-remap inside a 32-weight scale group: k = 4c + s (c = fragment col, s = step 0..3), so
+#   all 4 steps of a group share one scale: P = sum of the 4 MMAs, C += scale * P in fp32 (per lane: row fm).
+#   A lane's pair (c, c+1) = nibbles s, s+4 of word c/2 (one fp4x2), its B values 4 contiguous activations.
 MAP_SRC = """
     uint p = thread_position_in_grid.x;
     if (p >= TK) return;
@@ -168,7 +167,7 @@ GROUP_SCAN = """
     uint sub = lane % LPR;
     uint row = row0 + sg * RS + lane / LPR;
     uint rbk = sg / SK, ks = sg % SK;
-    constexpr uint NC = NK / 32, NB = NK / 64;
+    constexpr uint NC = NK / 32;
     // MMA fragment coordinates
     uint qid = lane / 4;
     uint fm = (qid & 4) + ((lane / 2) % 4);
@@ -206,37 +205,34 @@ GATE_UP_G_SRC = GROUP_SCAN + """
             gb += simd_shuffle_xor(gb, o); ub += simd_shuffle_xor(ub, o);
         }
         if (sub == 0) {
-            h[slot * F + row] = T(ga / (1.f + metal::exp(-ga)) * ua);
-            if (n == 2) h[m[1] * F + row] = T(gb / (1.f + metal::exp(-gb)) * ub);
+            h[slot * F + row] = T(swiglu(ga, ua));
+            if (n == 2) h[m[1] * F + row] = T(swiglu(gb, ub));
         }
         return;
     }
-    const device T* xa = x + (s0 / K) * D + fm * 8;
-    const device T* xb = x + (s1 / K) * D + fm * 8;
-    const device uint2* g2 = (const device uint2*)(gq + rf * (NK / 8)) + fn / 2;
-    const device uint2* u2 = (const device uint2*)(uq + rf * (NK / 8)) + fn / 2;
+    const device T* xa = x + (s0 / K) * D + fm * 4;
+    const device T* xb = x + (s1 / K) * D + fm * 4;
+    const device uint* gw = gq + rf * (NK / 8) + fn / 2;
+    const device uint* uw = uq + rf * (NK / 8) + fn / 2;
     simdgroup_matrix<float, 8, 8> Cg = make_filled_simdgroup_matrix<float, 8, 8>(0.f);
     simdgroup_matrix<float, 8, 8> Cu = make_filled_simdgroup_matrix<float, 8, 8>(0.f);
+    simdgroup_matrix<float, 8, 8> Pg, Pu;
     simdgroup_matrix<half, 8, 8> Ag, Au, B;
-    for (uint b = ks; b < NB; b += SK) {
-        uint2 wg = g2[b * 4], wu = u2[b * 4];
-        uint pg[2] = {(wg.x & 0xFFFFu) | (wg.y << 16), (wg.x >> 16) | (wg.y & 0xFFFF0000u)};
-        uint pu[2] = {(wu.x & 0xFFFFu) | (wu.y << 16), (wu.x >> 16) | (wu.y & 0xFFFF0000u)};
-        uint gi = rf * NC + b * 2 + fn / 4;
-        half2 hsg = hs2(e8s(gs[gi])), hsu = hs2(e8s(us[gi]));
-        const device vec<T, 4>* pa = (const device vec<T, 4>*)(xa + b * 64);
-        const device vec<T, 4>* pb = (const device vec<T, 4>*)(xb + b * 64);
-        half4 a0 = half4(pa[0]), a1 = half4(pa[1]), b0 = half4(pb[0]), b1 = half4(pb[1]);
-        half2 xv[8] = {half2(a0.x, b0.x), half2(a0.y, b0.y), half2(a0.z, b0.z), half2(a0.w, b0.w),
-                       half2(a1.x, b1.x), half2(a1.y, b1.y), half2(a1.z, b1.z), half2(a1.w, b1.w)};
-        for (uint s = 0; s < 8; ++s) {
-            half2 vg = fp4x2(pg[s / 4] >> (4 * (s % 4))) * hsg.x * hsg.y;
-            half2 vu = fp4x2(pu[s / 4] >> (4 * (s % 4))) * hsu.x * hsu.y;
+    for (uint g = ks; g < NC; g += SK) {
+        uint wg = gw[g * 4], wu = uw[g * 4];
+        float sg_ = e8s(gs[rf * NC + g]), su = e8s(us[rf * NC + g]);
+        half4 a0 = half4(*(const device vec<T, 4>*)(xa + g * 32)), b0 = half4(*(const device vec<T, 4>*)(xb + g * 32));
+        for (uint s = 0; s < 4; ++s) {
+            half2 vg = fp4x2(wg >> (4 * s)), vu = fp4x2(wu >> (4 * s));
             Ag.thread_elements()[0] = vg.x; Ag.thread_elements()[1] = vg.y;
             Au.thread_elements()[0] = vu.x; Au.thread_elements()[1] = vu.y;
-            B.thread_elements()[0] = xv[s].x; B.thread_elements()[1] = xv[s].y;
-            simdgroup_multiply_accumulate(Cg, Ag, B, Cg);
-            simdgroup_multiply_accumulate(Cu, Au, B, Cu);
+            B.thread_elements()[0] = a0[s]; B.thread_elements()[1] = b0[s];
+            if (s == 0) { simdgroup_multiply(Pg, Ag, B); simdgroup_multiply(Pu, Au, B); }
+            else { simdgroup_multiply_accumulate(Pg, Ag, B, Pg); simdgroup_multiply_accumulate(Pu, Au, B, Pu); }
+        }
+        for (uint i = 0; i < 2; ++i) {
+            Cg.thread_elements()[i] = fma(sg_, Pg.thread_elements()[i], Cg.thread_elements()[i]);
+            Cu.thread_elements()[i] = fma(su, Pu.thread_elements()[i], Cu.thread_elements()[i]);
         }
     }
     for (uint i = 0; i < 2; ++i) {
@@ -248,7 +244,7 @@ GATE_UP_G_SRC = GROUP_SCAN + """
     for (uint i = 0; i < 2; ++i) {
         float g = 0.f, u = 0.f;
         for (uint j = 0; j < SK; ++j) { g += red[(sg + j) * 128 + lane * 2 + i]; u += red[(sg + j) * 128 + 64 + lane * 2 + i]; }
-        if (fn + i < n) h[m[fn + i] * F + rowm] = T(g / (1.f + metal::exp(-g)) * u);
+        if (fn + i < n) h[m[fn + i] * F + rowm] = T(swiglu(g, u));
     }
 """
 # grouped down: writes w * y per slot (fp32); a combine kernel sums the k slots of each token
@@ -275,31 +271,29 @@ DOWN_G_SRC = GROUP_SCAN + """
         }
         for (uint o = LPR / 2; o > 0; o >>= 1) { a += simd_shuffle_xor(a, o); b2 += simd_shuffle_xor(b2, o); }
         if (sub == 0) {
-            yp[slot * D + row] = wts[slot] * a;
-            if (n == 2) yp[m[1] * D + row] = wts[m[1]] * b2;
+            yp[slot * D + row] = wts[slot] * 0x1p14f * a;
+            if (n == 2) yp[m[1] * D + row] = wts[m[1]] * 0x1p14f * b2;
         }
         return;
     }
-    const device T* ha = h + s0 * F + fm * 8;
-    const device T* hb = h + s1 * F + fm * 8;
-    const device uint2* d2 = (const device uint2*)(dq + rf * (NK / 8)) + fn / 2;
+    const device T* ha = h + s0 * F + fm * 4;
+    const device T* hb = h + s1 * F + fm * 4;
+    const device uint* dw = dq + rf * (NK / 8) + fn / 2;
     simdgroup_matrix<float, 8, 8> C = make_filled_simdgroup_matrix<float, 8, 8>(0.f);
+    simdgroup_matrix<float, 8, 8> P;
     simdgroup_matrix<half, 8, 8> A, B;
-    for (uint b = ks; b < NB; b += SK) {
-        uint2 w = d2[b * 4];
-        uint pw[2] = {(w.x & 0xFFFFu) | (w.y << 16), (w.x >> 16) | (w.y & 0xFFFF0000u)};
-        half2 hsd = hs2(e8s(ds[rf * NC + b * 2 + fn / 4]));
-        const device vec<T, 4>* pa = (const device vec<T, 4>*)(ha + b * 64);
-        const device vec<T, 4>* pb = (const device vec<T, 4>*)(hb + b * 64);
-        half4 a0 = half4(pa[0]), a1 = half4(pa[1]), b0 = half4(pb[0]), b1 = half4(pb[1]);
-        half2 xv[8] = {half2(a0.x, b0.x), half2(a0.y, b0.y), half2(a0.z, b0.z), half2(a0.w, b0.w),
-                       half2(a1.x, b1.x), half2(a1.y, b1.y), half2(a1.z, b1.z), half2(a1.w, b1.w)};
-        for (uint s = 0; s < 8; ++s) {
-            half2 v = fp4x2(pw[s / 4] >> (4 * (s % 4))) * hsd.x * hsd.y;
+    for (uint g = ks; g < NC; g += SK) {
+        uint w = dw[g * 4];
+        float sd = e8s(ds[rf * NC + g]);
+        half4 a0 = half4(*(const device vec<T, 4>*)(ha + g * 32)), b0 = half4(*(const device vec<T, 4>*)(hb + g * 32));
+        for (uint s = 0; s < 4; ++s) {
+            half2 v = fp4x2(w >> (4 * s));
             A.thread_elements()[0] = v.x; A.thread_elements()[1] = v.y;
-            B.thread_elements()[0] = xv[s].x; B.thread_elements()[1] = xv[s].y;
-            simdgroup_multiply_accumulate(C, A, B, C);
+            B.thread_elements()[0] = a0[s]; B.thread_elements()[1] = b0[s];
+            if (s == 0) simdgroup_multiply(P, A, B);
+            else simdgroup_multiply_accumulate(P, A, B, P);
         }
+        for (uint i = 0; i < 2; ++i) C.thread_elements()[i] = fma(sd, P.thread_elements()[i], C.thread_elements()[i]);
     }
     for (uint i = 0; i < 2; ++i) red[sg * 128 + lane * 2 + i] = C.thread_elements()[i];
     threadgroup_barrier(mem_flags::mem_threadgroup);
@@ -307,7 +301,7 @@ DOWN_G_SRC = GROUP_SCAN + """
     for (uint i = 0; i < 2; ++i) {
         float a = 0.f;
         for (uint j = 0; j < SK; ++j) a += red[(sg + j) * 128 + lane * 2 + i];
-        if (fn + i < n) yp[m[fn + i] * D + rowm] = wts[m[fn + i]] * a;
+        if (fn + i < n) yp[m[fn + i] * D + rowm] = wts[m[fn + i]] * 0x1p14f * a;
     }
 """
 
@@ -355,7 +349,7 @@ DOWN_P_SRC = """
             }
         }
     }
-    float wa = wts[slot], wb = wts[min(nxt, uint(TK - 1))];
+    float wa = wts[slot] * 0x1p14f, wb = wts[min(nxt, uint(TK - 1))] * 0x1p14f;
     for (uint r = 0; r < R; ++r) {
         float a = aa[r], b = ab[r];
         for (uint o = LPR / 2; o > 0; o >>= 1) { a += simd_shuffle_xor(a, o); b += simd_shuffle_xor(b, o); }
@@ -390,7 +384,7 @@ GATE_UP_P_SRC = """
         }
         for (uint r = 0; r < R; ++r) {
             float g = simd_sum(ag[r]), u = simd_sum(au[r]);
-            if (lane == 0) h[slot * F + row0 + r] = T(g / (1.f + metal::exp(-g)) * u);
+            if (lane == 0) h[slot * F + row0 + r] = T(swiglu(g, u));
         }
         return;
     }
@@ -410,8 +404,8 @@ GATE_UP_P_SRC = """
     for (uint r = 0; r < R; ++r) {
         float g = simd_sum(ga[r]), u = simd_sum(ua[r]), g2 = simd_sum(gb[r]), u2 = simd_sum(ub[r]);
         if (lane == 0) {
-            h[slot * F + row0 + r] = T(g / (1.f + metal::exp(-g)) * u);
-            h[nxt * F + row0 + r] = T(g2 / (1.f + metal::exp(-g2)) * u2);
+            h[slot * F + row0 + r] = T(swiglu(g, u));
+            h[nxt * F + row0 + r] = T(swiglu(g2, u2));
         }
     }
 """
@@ -425,20 +419,20 @@ COMBINE_SRC = """
     y[i] = T(a);
 """
 
-_k1 = mx.fast.metal_kernel(name="mfp4_gate_up_v1", input_names=["x", "gq", "gs", "uq", "us", "idx"],
+_k1 = mx.fast.metal_kernel(name="mfp4r5_gate_up_v2", input_names=["x", "gq", "gs", "uq", "us", "idx"],
                            output_names=["h"], source=GATE_UP_SRC, header=HEADER)
-_k2 = mx.fast.metal_kernel(name="mfp4_down_v1", input_names=["h", "dq", "ds", "idx", "wts"],
+_k2 = mx.fast.metal_kernel(name="mfp4r5_down_v2", input_names=["h", "dq", "ds", "idx", "wts"],
                            output_names=["y"], source=DOWN_SRC, header=HEADER)
-_k1p = mx.fast.metal_kernel(name="mfp4_gate_up_p_v1", input_names=["x", "gq", "gs", "uq", "us", "idx"],
+_k1p = mx.fast.metal_kernel(name="mfp4r5_gate_up_p_v2", input_names=["x", "gq", "gs", "uq", "us", "idx"],
                             output_names=["h"], source=GATE_UP_P_SRC, header=HEADER)
-_k2p = mx.fast.metal_kernel(name="mfp4_down_p_v1", input_names=["h", "dq", "ds", "idx", "wts"],
+_k2p = mx.fast.metal_kernel(name="mfp4r5_down_p_v2", input_names=["h", "dq", "ds", "idx", "wts"],
                             output_names=["yp"], source=DOWN_P_SRC, header=HEADER)
-_k0 = mx.fast.metal_kernel(name="mfp4_map_v1", input_names=["idx"], output_names=["tl"], source=MAP_SRC)
-_k1g = mx.fast.metal_kernel(name="mfp4_gate_up_g_v4", input_names=["x", "gq", "gs", "uq", "us", "idx", "tl"],
+_k0 = mx.fast.metal_kernel(name="mfp4r5_map_v1", input_names=["idx"], output_names=["tl"], source=MAP_SRC)
+_k1g = mx.fast.metal_kernel(name="mfp4r5_gate_up_g_v10", input_names=["x", "gq", "gs", "uq", "us", "idx", "tl"],
                             output_names=["h"], source=GATE_UP_G_SRC, header=HEADER)
-_k2g = mx.fast.metal_kernel(name="mfp4_down_g_v4", input_names=["h", "dq", "ds", "idx", "wts", "tl"],
+_k2g = mx.fast.metal_kernel(name="mfp4r5_down_g_v10", input_names=["h", "dq", "ds", "idx", "wts", "tl"],
                             output_names=["yp"], source=DOWN_G_SRC, header=HEADER)
-_k3 = mx.fast.metal_kernel(name="mfp4_combine_v1", input_names=["yp"], output_names=["y"], source=COMBINE_SRC)
+_k3 = mx.fast.metal_kernel(name="mfp4r5_combine_v1", input_names=["yp"], output_names=["y"], source=COMBINE_SRC)
 
 
 def _lpr(chunks, iters=ITERS):
