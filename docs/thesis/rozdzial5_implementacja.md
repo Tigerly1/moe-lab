@@ -58,10 +58,26 @@ Kernel powstał w pętli autoresearch, w rundach 1 i 3.
 
 `metal_q4_moe` wybiera kernel według reżimu:
 - T = 1: v4;
-- T > 1 oraz d, f podzielne przez 128: tiles_v2;
-- w pozostałych przypadkach: tiles_b.
+- T > 1, aktywacje bf16/fp16 i obciążenie T·k/E nie większe od progu: tiles_v2 (MMA). Wystarczy podzielność d i f przez 64, którą spełnia każda kwantyzacja z grupą 64 (runda 9; wcześniej wymagaliśmy 128, przez co Gemma-4 trafiała na wolniejszy wariant);
+- aktywacje fp32: tiles_b;
+- obciążenie ponad próg (8 dla małych ekspertów, 24 dla d·f ≥ 1,5 mln): ścieżka `gather_qmm`, bit-identyczna z mlx-lm.
+
+Aktywacja GLU jest parametrem szablonu (`ACT`): SiLU dla SwiGLU, GELU-tanh dla GeGLU Gemmy-4.
 
 Wszystkie trzy warianty współdzielą układ stanu `mx.quantize`, więc kwantyzację wykonujemy raz.
+
+## 5.7. Uniwersalna łatka na `SwitchGLU`
+
+Łatki dla poszczególnych rodzin podmieniają cały blok MoE: router, ważenie i ekspertów. Każda nowa rodzina wymaga więc nowego kodu. Łatka uniwersalna (`moelab/universal.py`) podmienia tylko `SwitchGLU`, czyli obliczenia ekspertów dla par (token, ekspert):
+- każdy slot trafia do kernela jako osobny wiersz z k = 1 i wagą 1, a kernel zwraca wyjścia per slot w kształcie oczekiwanym przez model;
+- przy T = 1 GEMV v4 działa w trybie bez redukcji po k (`NORED`);
+- router, ważenie i eksperci współdzieleni pozostają kodem modelu.
+
+**Koszt** względem łatki dedykowanej to brak połączonego routera i połączonej sumy ważonej: 1,075× zamiast 1,086× na Qwen3.
+
+**Weryfikacja poprawności:** test z bit-identyczną ścieżką zapasową w miejscu kernela. Logity muszą być równe stock dokładnie, a test mutacyjny potwierdza, że wykrywa pominięcie eksperta współdzielonego.
+
+Ten sam projekt trafił do zgłoszenia w mlx-lm (#2044) jako `mlx_lm/models/switch_kernels.py`. Operacja jest tam `mx.custom_function` z gradientem liczonym przez `gather_qmm`.
 
 ## 5.6. Autoresearch: metodyka poszukiwań wspieranych przez agenta
 

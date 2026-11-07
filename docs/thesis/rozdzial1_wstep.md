@@ -74,6 +74,14 @@ Dwie trudności odróżniają ten problem od zwykłego mnożenia macierzy:
    - Z naszymi kernelami MLX dorównuje llama.cpp przy 8 klientach i wyprzedza go 1,48× przy 32.
    - Do tego dochodzi połączony kernel routera: +6–8 punktów procentowych w dekodowaniu jednego strumienia (§6.6).
 
+4b. **Modele faktycznie używane lokalnie i pokrycie wszystkich MoE z mlx-lm** (§6.4d, §5.7).
+   - **Wybór modeli według danych.** Bierzemy dwie najczęściej pobierane rodziny MoE z mlx-community: Gemma-4-26B-A4B i Qwen3.6-35B-A3B. Przy 32 zapytaniach Gemma-4 zyskuje 1,70×, a na prawdziwym serwerze 1,43×. Ten wynik dała dopiero poprawka dyspozytora: kafelki MMA działają dla każdego wymiaru podzielnego przez 64.
+   - **Jedna uniwersalna łatka na `SwitchGLU`.** Działa w każdym modelu MoE z mlx-lm bez kodu specyficznego dla rodziny. Na sześciu rodzinach o różnych routerach logity są równe stock co do bitu. W nowych rodzinach daje przy 32 zapytaniach 1,52× (LFM2.5) i 1,27× (GLM-4.7-Flash).
+
+4c. **Wkład do mlx-lm.**
+   - **Kernele jako zgłoszenie [ml-explore/mlx-lm#2044](https://github.com/ml-explore/mlx-lm/pull/2044).** Zgłoszenie dodaje do `SwitchGLU` kernele grupujące ekspertów. Na benchmarku samego mlx-lm przy 32 zapytaniach daje 1,38–1,71× na pięciu modelach, a pełny zestaw 411 testów przechodzi. Gradient liczony jest ścieżką `gather_qmm`, więc trening LoRA nie ucierpi.
+   - **Poprawka błędu serwera.** Pusty prompt kończy wątek generowania dla wszystkich klientów. Poprawka jest gotowa jako osobna zmiana.
+
 5. **Metodyka poszukiwań wspieranych przez agenta LLM** (autoresearch, §5.6, RQ5), wraz z opisem zabezpieczeń przed oszukiwaniem metryki i błędów samego agenta.
 
 6. **Udokumentowane korekty** (rozdział 7). Wszystkie liczby przeszły trzy niezależne audyty, a wyniki rund 7–8 także przegląd adwersaryjny (§7.9–7.12). Poprawiliśmy m.in.:

@@ -259,6 +259,20 @@ Rozbicie czasu kroku dekodowania (Qwen3, dwa czyste uruchomienia, `runs/r8/longc
 
 Główne wyniki zmierzyliśmy ponownie na najnowszych wersjach (mlx-lm 0.32.2, MLX 0.32.4). MLX 0.32.4 zawiera już ulepszenie `gather_qmm` z PR #4572. Stosunki zgadzają się z pomiarami na mlx-lm 0.31.3.
 
+## 6.9a. Pomiar narzędziem mlx-lm (zgłoszenie #2044)
+
+Ten sam kod, przeniesiony do mlx-lm, zmierzyliśmy ich benchmarkiem `mlx_lm benchmark` (prompt 128, 256 generowanych tokenów, 3 próby, dwa przejścia na przemian `main` i gałąź; `runs/r9/upstream_mlx_lm_benchmark.log`):
+
+| Model | B=1 | B=8 | B=32 |
+|---|---|---|---|
+| Qwen3-30B-A3B | 1,08× | 1,20× | 1,56× |
+| Gemma-4-26B-A4B | 1,05× | 1,29× | **1,71×** |
+| DeepSeek-V2-Lite | 1,05× | 1,27× | 1,55× |
+| GLM-4.7-Flash | 1,03× | 1,35× | 1,40× |
+| LFM2.5-8B-A1B | 1,06× | 1,33× | 1,38× |
+
+Wyniki zgadzają się z naszym harnessem. Pierwszy przebieg A/B przez pomyłkę porównywał gałąź z nią samą: `python -m` uruchamiane z katalogu gałęzi ładowało ten sam kod w obu ramionach. Błąd wykryliśmy po identycznych liczbach, zanim wyniki trafiły do zgłoszenia, a skrypt teraz wypisuje, który kod się ładuje.
+
 ## 6.10. Do uzupełnienia
 
 - [ ] Ten sam zestaw pomiarów na GPU NVIDIA: Triton fused_moe i Marlin-MoE przez Modal (RQ4).
