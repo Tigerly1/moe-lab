@@ -1,0 +1,40 @@
+{
+ "args": {
+  "model": "mlx-community/gpt-oss-20b-MXFP4-Q8",
+  "variant": "moelab/variants/mlx/metal_mxfp4_gptoss.py",
+  "tokens": 512,
+  "rounds": 3,
+  "quality": false,
+  "draft": null,
+  "num_draft": 3,
+  "max_t": 256,
+  "out": "runs/r8/latest/G_fused.json",
+  "fused_router": true,
+  "context": 0,
+  "verify_chunks": null
+ },
+ "stock": [
+  73.9311275437797,
+  73.98636557107638,
+  73.95102030364667
+ ],
+ "variant": [
+  81.4352485396598,
+  81.36050011284544,
+  81.48144243234442
+ ],
+ "speedup": 1.1012052058955035,
+ "tokens_identical": 103,
+ "first_diff": 92,
+ "len_stock": 512,
+ "len_variant": 512,
+ "guard": {
+  "key": "Apple M4 Pro|ac",
+  "probe_ref_gbs": 242.70532543792592,
+  "probe_min_gbs": 236.95064037495254,
+  "probe_ratio": 0.9762894157654353,
+  "status": "ok",
+  "contended": false,
+  "history": 40
+ }
+}

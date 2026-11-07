@@ -91,7 +91,8 @@ def test_gptoss_kernel_large_scales(T):
     mod = load_variant(VARIANT)
     mx.random.seed(1)
     E, f, d, k = 8, 128, 256, 4
-    sw = gpt_oss.SwitchGLU(d, f, E, activation=gpt_oss.SwiGLU(), bias=True)
+    act = getattr(gpt_oss, "SwiGLU", None) or gpt_oss.SwigluOAI   # renamed in mlx-lm 0.32
+    sw = gpt_oss.SwitchGLU(d, f, E, activation=act(), bias=True)
     sw.gate_proj.weight = 0.05 * mx.random.normal((E, f, d))
     sw.up_proj.weight = 0.05 * mx.random.normal((E, f, d))
     sw.down_proj.weight = 300 * mx.random.normal((E, d, f))      # group max ~1000 -> scale bytes ~135

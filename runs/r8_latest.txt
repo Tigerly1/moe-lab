@@ -1,0 +1,56 @@
+mlx 0.32.4 mlx-lm 0.32.2
+== patch correctness on latest mlx-lm
+...............................................                          [100%]
+119 passed in 42.93s
+== Q plain decode, kernels
+guard: probe min 233 GB/s vs p90 243 for Apple M4 Pro|ac (96%) -> ok
+stock   91.4 tok/s  [91.35576075672203, 91.43462760117026, 91.21270881656567]
+variant 99.6 tok/s  [99.5900452808286, 99.59547120676598, 99.58560136134342]
+speedup 1.090x | greedy tokens identical: 44/512 (first diff at 22)
+== Q plain decode, fused
+guard: probe min 240 GB/s vs p90 243 for Apple M4 Pro|ac (99%) -> ok
+stock   89.9 tok/s  [89.85884045460894, 90.18918679200831, 89.77313675223633]
+variant 104.8 tok/s  [103.52248482033103, 104.75927847251931, 104.80355064936386]
+speedup 1.166x | greedy tokens identical: 12/512 (first diff at 2)
+== Q batch, fused
+B=  1: stock    90.3 tok/s  variant   104.7 tok/s  speedup 1.160x  (stock 90.2-90.4, variant 104.5-104.8) identical-prefix median 16/128
+B=  4: stock   136.4 tok/s  variant   166.8 tok/s  speedup 1.223x  (stock 135.5-136.5, variant 166.2-167.4) identical-prefix median 48/128
+B=  8: stock   166.5 tok/s  variant   204.2 tok/s  speedup 1.227x  (stock 166.3-167.1, variant 203.1-204.7) identical-prefix median 25/128
+B= 16: stock   189.0 tok/s  variant   251.8 tok/s  speedup 1.332x  (stock 188.6-189.0, variant 250.3-252.7) identical-prefix median 33/128
+B= 32: stock   221.6 tok/s  variant   352.2 tok/s  speedup 1.589x  (stock 220.1-221.7, variant 349.3-352.5) identical-prefix median 23/128
+guard: probe min 236 GB/s vs p90 243 for Apple M4 Pro|ac (97%) -> ok
+== G plain decode, kernels
+guard: probe min 240 GB/s vs p90 243 for Apple M4 Pro|ac (99%) -> ok
+stock   73.9 tok/s  [73.2495896433147, 73.9784124946703, 73.87667192974625]
+variant 79.4 tok/s  [78.59888380753628, 79.61376284822352, 79.44209513413996]
+speedup 1.075x | greedy tokens identical: 29/512 (first diff at 24)
+== G plain decode, fused
+guard: probe min 237 GB/s vs p90 243 for Apple M4 Pro|ac (98%) -> ok
+stock   74.0 tok/s  [73.9311275437797, 73.98636557107638, 73.95102030364667]
+variant 81.4 tok/s  [81.4352485396598, 81.36050011284544, 81.48144243234442]
+speedup 1.101x | greedy tokens identical: 103/512 (first diff at 92)
+== G batch, fused
+B=  1: stock    73.2 tok/s  variant    79.8 tok/s  speedup 1.090x  (stock 73.2-73.2, variant 79.8-79.8) identical-prefix median 18/128
+B=  4: stock   128.9 tok/s  variant   159.7 tok/s  speedup 1.239x  (stock 128.8-129.0, variant 159.7-159.9) identical-prefix median 69/128
+B=  8: stock   137.8 tok/s  variant   197.4 tok/s  speedup 1.432x  (stock 137.5-137.9, variant 197.2-197.5) identical-prefix median 117/128
+B= 16: stock   167.1 tok/s  variant   259.1 tok/s  speedup 1.551x  (stock 167.0-167.8, variant 257.7-259.6) identical-prefix median 29/128
+B= 32: stock   224.3 tok/s  variant   358.9 tok/s  speedup 1.600x  (stock 223.4-225.4, variant 358.4-360.0) identical-prefix median 70/128
+guard: probe min 234 GB/s vs p90 243 for Apple M4 Pro|ac (96%) -> ok
+== D plain decode, kernels
+guard: probe min 236 GB/s vs p90 243 for Apple M4 Pro|ac (97%) -> ok
+stock   123.6 tok/s  [123.5535766059545, 123.66188680702334, 123.53487921493358]
+variant 132.6 tok/s  [132.61858462581986, 132.56230188851342, 132.54134479945088]
+speedup 1.073x | greedy tokens identical: 225/225 (first diff at None)
+== D plain decode, fused
+guard: probe min 238 GB/s vs p90 243 for Apple M4 Pro|ac (98%) -> ok
+stock   123.7 tok/s  [123.6623767050925, 123.64912187063895, 123.66150728778483]
+variant 138.4 tok/s  [138.37323504861325, 137.79920484599785, 138.4617159473257]
+speedup 1.119x | greedy tokens identical: 225/225 (first diff at None)
+== D batch, fused
+B=  1: stock   121.4 tok/s  variant   136.5 tok/s  speedup 1.124x  (stock 121.3-121.5, variant 136.4-136.5) identical-prefix median 128/128
+B=  4: stock   191.6 tok/s  variant   219.7 tok/s  speedup 1.147x  (stock 191.6-192.2, variant 219.5-219.8) identical-prefix median 106/128
+B=  8: stock   209.1 tok/s  variant   265.0 tok/s  speedup 1.267x  (stock 208.8-209.1, variant 264.9-265.1) identical-prefix median 75/128
+B= 16: stock   256.6 tok/s  variant   326.4 tok/s  speedup 1.272x  (stock 256.4-256.6, variant 326.4-326.5) identical-prefix median 128/128
+B= 32: stock   312.3 tok/s  variant   480.8 tok/s  speedup 1.540x  (stock 312.3-312.4, variant 472.6-481.1) identical-prefix median 128/128
+guard: probe min 238 GB/s vs p90 243 for Apple M4 Pro|ac (98%) -> ok
+done

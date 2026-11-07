@@ -1,0 +1,21 @@
+== default
+Fetching 12 files:   0%|          | 0/12 [00:00<?, ?it/s]Fetching 12 files: 100%|██████████| 12/12 [00:00<00:00, 2902.63it/s]
+ctx  1024: stock 16.26 ms  variant 14.28  no-moe 6.83  | MoE stock 9.43 -> 7.45 ms (1.266x), MoE share 58%, e2e 1.139x
+ctx 16384: stock 26.57 ms  variant 23.39  no-moe 18.18  | MoE stock 8.39 -> 5.21 ms (1.611x), MoE share 32%, e2e 1.136x
+guard: probe min 208 GB/s vs p90 244 for Apple M4 Pro|ac (85%) -> CONTENDED - absolute numbers unreliable, close other GPU users and re-run
+== default, fused router
+Fetching 12 files:   0%|          | 0/12 [00:00<?, ?it/s]Fetching 12 files: 100%|██████████| 12/12 [00:00<00:00, 2236.37it/s]
+ctx  1024: stock 16.03 ms  variant 12.74  no-moe 7.43  | MoE stock 8.60 -> 5.32 ms (1.618x), MoE share 54%, e2e 1.258x
+ctx 16384: stock 26.48 ms  variant 22.66  no-moe 18.15  | MoE stock 8.33 -> 4.51 ms (1.847x), MoE share 31%, e2e 1.169x
+guard: probe min 221 GB/s vs p90 244 for Apple M4 Pro|ac (90%) -> CONTENDED - absolute numbers unreliable, close other GPU users and re-run
+== one command buffer per step
+Fetching 12 files:   0%|          | 0/12 [00:00<?, ?it/s]Fetching 12 files: 100%|██████████| 12/12 [00:00<00:00, 2274.88it/s]
+ctx  1024: stock 17.87 ms  variant 16.69  no-moe 8.28  | MoE stock 9.60 -> 8.41 ms (1.141x), MoE share 54%, e2e 1.071x
+ctx 16384: stock 27.56 ms  variant 28.15  no-moe 19.46  | MoE stock 8.09 -> 8.69 ms (0.931x), MoE share 29%, e2e 0.979x
+guard: probe min 236 GB/s vs p90 242 for Apple M4 Pro|ac (97%) -> ok
+== commit after every op
+Fetching 12 files:   0%|          | 0/12 [00:00<?, ?it/s]Fetching 12 files: 100%|██████████| 12/12 [00:00<00:00, 2790.16it/s]
+ctx  1024: stock 16.92 ms  variant 16.69  no-moe 8.99  | MoE stock 7.94 -> 7.71 ms (1.030x), MoE share 47%, e2e 1.014x
+ctx 16384: stock 27.25 ms  variant 26.39  no-moe 16.90  | MoE stock 10.34 -> 9.49 ms (1.090x), MoE share 38%, e2e 1.032x
+guard: probe min 235 GB/s vs p90 242 for Apple M4 Pro|ac (97%) -> ok
+done
