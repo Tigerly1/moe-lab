@@ -5,6 +5,7 @@ Hardware: Apple M4 Pro, 48 GB, unless stated. Details and caveats: `docs/RESULTS
 
 ## 2026-11-07 — upstream: PRs to ml-explore/mlx-lm
 
+- **2026-11-08 update:** PR 1 (#2043) was closed to make room. **PR 2 is open as [ml-explore/mlx-lm#2044](https://github.com/ml-explore/mlx-lm/pull/2044).** The empty-prompt fix stays on the fork (`server-reject-empty-prompt`) for later.
 - **PR 1 opened:** [ml-explore/mlx-lm#2043](https://github.com/ml-explore/mlx-lm/pull/2043), "server: reject empty prompts instead of ending the generation thread".
   - The bug: one empty prompt kills the batched server for every client.
   - The new test fails on main and passes with the fix; all 44 server tests pass.
