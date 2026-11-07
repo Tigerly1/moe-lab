@@ -1,0 +1,16 @@
+commit	score	per_point	status	description
+7df83e9	1.3765	gptT1=1.163 gptT2=1.158 gptT4=1.224 gptT8=1.504 qwen3T1=1.262 qwen3T4=1.587 qwen3T16=1.887	keep	baseline: round-4 winner + hs2 scale fix
+7e11e96	1.3891	gptT1=1.161 gptT2=1.156 gptT4=1.225 gptT8=1.505 qwen3T1=1.268 qwen3T4=1.589 qwen3T16=2.002	keep	MMA K remap so each 4-step block = one 32-group; E8M0 scale fp32 on per-group partial acc; hs2 removed (rerun 1.3903; < strict bar 1.4165 but less code, exact)
+7e11e96+	1.3857	gptT1=1.158 gptT2=1.157 gptT4=1.231 gptT8=1.482 qwen3T1=1.262 qwen3T4=1.589 qwen3T16=2.004	discard	T_GROUP 16 (gpt T8 via paired path)
+7e11e96+	-	probe: qwen n8 490us vs 462us	discard	MMA: uint4 coalesced weight loads + 4x4 simd_shuffle_xor transpose (probe only, slower)
+7e11e96+	-	probe: qwen n8 646us vs 462us	discard	MMA: 2 scale groups in flight (2 P chains) - much slower, likely reg pressure (probe only)
+7e11e96+	-	probe: qwen n8 489us vs 462us	discard	MMA: software prefetch of next group's loads (probe only, no gain)
+7e11e96+	-	probe qwenT16: 590us (NY 0.5) vs 563us; gptT8 1160 vs 1117	discard	compact leader list (atomic in map, init_value=0) + TG rows looping over groups, NY_FRAC 1/0.5/0.25 (probe only, all slower)
+1cb3241	1.3844	gptT1=1.161 gptT2=1.156 gptT4=1.225 gptT8=1.497 qwen3T1=1.262 qwen3T4=1.576 qwen3T16=1.990	keep	E8M0 exact for bytes 1..254: e8s=2^(s-127) without 2^14 fold (fold overflowed s>=241 -> NaN in all paths); 2^14 applied once per output. Correctness keep at noise-level score (-0.005, ci 0.04)
+51be298	1.3796	gptT1=1.163 gptT2=1.160 gptT4=1.224 gptT8=1.495 qwen3T1=1.263 qwen3T4=1.571 qwen3T16=1.942	discard	MMA bfloat A/B fragments (removes half-range limit on activations/h in T>=8 MMA path); qwen3T16 -0.048
+faa3c4e	1.3854	gptT1=1.164 gptT2=1.159 gptT4=1.223 gptT8=1.500 qwen3T1=1.261 qwen3T4=1.574 qwen3T16=1.993	keep	final confirmation run (comment-only commit on 1cb3241)
+7e11e96+	-	amortized re-probe qwenT16: pf 562 / tr 564 vs 562us	discard	re-measured prefetch and uint4+transpose with amortized interleaved timing: neutral
+7e11e96+	-	probe qwenT4 224 vs 222us; gptT4 684 vs 674	discard	T_GROUP 4 (grouped/MMA path at T=4)
+7e11e96+	-	probe qwenT16 561 vs 563us; gptT8 1128 vs 1116	discard	3-slot experts -> scalar pair+single instead of MMA
+7e11e96+	-	probe qwenT4 222/223 vs 224us; gptT4 683/681 vs 677	discard	pair path R_UP 2 / R_DOWN 4
+7e11e96+	-	probe qwenT16 594 vs 564us	discard	bfloat MMA with bit-trick half->bfloat (slower than native cvt)

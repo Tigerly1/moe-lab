@@ -300,6 +300,26 @@ Our kernel is closer to fp32 than stock.
 
 One layer-17 channel reaches about 40,000, which is close to the half range. The kernel matches it in fp32 (40037.586 vs 40037.590); the per-layer bf16 difference is one ULP.
 
+### Autoresearch round 5: MXFP4 after the fix (`autoresearch/program_mxfp4_r5.md`)
+**Two changes:**
+1. **Scale applied in fp32.** The K index is remapped so that the 4 MMA steps of one 32-weight scale group are contiguous. The E8M0 scale is applied in fp32 to the per-group partial product (`C += scale * P`). The half-scale workaround (`hs2`) is deleted, so the code is simpler.
+2. **Second latent bug found and fixed:** the 2^14 fold inside `e8s` overflowed for E8M0 bytes ≥ 241 (NaN in *every* path, T=1 included). Now `e8s = 2^(s-127)` and the 2^14 is applied once per output, so the kernel is exact for bytes 1..254. Real checkpoints only reach ~136.
+
+**Agent's measurements:**
+- Raw `simdgroup_matrix` 8×8 throughput on the M4 Pro is ~6.1 G MMA/s (≈6.2 TFLOPS), the same for half, bfloat and float.
+- The MMA gate_up path runs at ~80% of that issue rate.
+- Every point except Qwen3 T=16 is already at the bandwidth floor (237–255 GB/s).
+
+**Remaining limit:** the T≥8 MMA path converts activations to half. |x| or |h| > 65504 would break it. A bfloat-fragment variant fixes that at −2.4% on Qwen3 T=16; it is not adopted, but it is saved.
+
+**Independent verification** (5×6) after the merge. The gate includes the large-scale and real-checkpoint tests (268 tests pass).
+
+| MXFP4 | r4 (buggy on real scales) | after hs2 fix | **r5** |
+|---|---|---|---|
+| Qwen3 traces T=1 / 4 / 8 / 16 / 32 | 1.26 / 1.54 / 1.79 / 2.06 / 2.42 | – / – / 1.64 / 1.89 / 2.15 | **1.27 / 1.53 / 1.73 / 2.00 / 2.34** |
+| gpt-oss-20b T=1 / 8 / 16 | 1.16 / 1.52 / 1.69 | – / 1.50 / 1.56 | **1.16 / 1.50 / 1.60** |
+| gpt-oss-20b e2e: plain / verify 4 / verify 16 | – | +7.6% / +28.4% / +64.6% | **+7.9% / +27.4% / +69.5%** |
+
 ## Open problems / next steps
 1. ~~Small-batch + skewed routing~~ → solved by `metal_q4_tiles_mma` (round 1). Remaining: gpt-oss (d % 128 ≠ 0) tail path, T=2 with uniform routing (round 3 running).
 2. **Regime dispatcher:** v31 for T ≤ 16, sorted `gather_qmm` above. The crossover sits around T≈16–32 on Qwen3 (RQ1).
