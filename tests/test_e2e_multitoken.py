@@ -29,3 +29,9 @@ def test_multitoken_matches_stock(path, monkeypatch):
     rel = (mx.linalg.norm((a - b).flatten()) / mx.linalg.norm(a.flatten())).item()
     assert rel < 1e-2, rel
     assert (a.argmax(-1) == b.argmax(-1)).mean().item() > 0.95
+
+
+@pytest.fixture(autouse=True, params=[False, True], ids=["stock-router", "fused-router"])
+def _router(request, monkeypatch):
+    """Round 7: every patch test also runs with the fused router tail (moelab/router.py)."""
+    monkeypatch.setattr(e2e, "FUSED_ROUTER", request.param)

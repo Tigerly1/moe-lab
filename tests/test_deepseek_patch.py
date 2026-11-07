@@ -47,3 +47,20 @@ def test_deepseek_patch_matches_stock(topk_method, monkeypatch):
     rel = (mx.linalg.norm((a - b).flatten()) / mx.linalg.norm(a.flatten())).item()
     assert 0 < rel < 2e-2, rel
     assert float(np.mean(np.array(a.argmax(-1)) == np.array(b.argmax(-1)))) >= 0.85
+
+
+def test_deepseek_fused_router_matches_stock(monkeypatch):
+    monkeypatch.setattr(e2e, "MAX_T", 16)
+    monkeypatch.setattr(e2e, "FUSED_ROUTER", True)
+    m = tiny("gready")
+    cls, _ = e2e.patch(m, load_variant("moelab/variants/mlx/metal_q4_moe.py"))
+
+    def run(use):
+        cls._use_variant = use
+        cache = make_prompt_cache(m)
+        outs = [m(mx.array([c]), cache=cache) for c in ([1, 5, 9], [4], [6, 7, 8, 9, 10, 11])]
+        return mx.concatenate(outs, axis=1).astype(mx.float32)
+
+    a, b = run(False), run(True)
+    rel = (mx.linalg.norm((a - b).flatten()) / mx.linalg.norm(a.flatten())).item()
+    assert 0 < rel < 2e-2, rel

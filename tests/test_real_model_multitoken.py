@@ -7,6 +7,8 @@ import mlx.core as mx
 import numpy as np
 import pytest
 
+import moelab.e2e as e2e
+
 SLOW = os.environ.get("MOE_SLOW") == "1"
 CASES = [("mlx-community/Qwen3-30B-A3B-4bit", "moelab/variants/mlx/metal_q4_moe.py"),
          ("mlx-community/gpt-oss-20b-MXFP4-Q8", "moelab/variants/mlx/metal_mxfp4_gptoss.py"),
@@ -53,3 +55,9 @@ def test_real_model_chunks_match_stock(repo, variant, monkeypatch):
         agree += list(np.array(la.argmax(-1)) == np.array(lb.argmax(-1)))
     # top-1 agreement over all 28 positions (a 4-position chunk alone is too few: one near-tie flip = 75%)
     assert np.mean(agree) >= 0.85, np.mean(agree)
+
+
+@pytest.fixture(autouse=True, params=[False, True], ids=["stock-router", "fused-router"])
+def _router(request, monkeypatch):
+    """Round 7: every patch test also runs with the fused router tail (moelab/router.py)."""
+    monkeypatch.setattr(e2e, "FUSED_ROUTER", request.param)

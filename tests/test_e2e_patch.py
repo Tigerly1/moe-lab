@@ -5,6 +5,7 @@ import pytest
 from mlx_lm.models import qwen3_moe
 from mlx_lm.models.cache import make_prompt_cache
 
+import moelab.e2e as e2e
 from moelab.e2e import patch
 from moelab.mlx_backend import load_variant
 
@@ -44,3 +45,9 @@ def test_patch_matches_stock(path):
     rel = (mx.linalg.norm((a - b).flatten()) / mx.linalg.norm(a.flatten())).item()
     assert rel < 1e-2, rel
     assert (a.argmax(-1) == b.argmax(-1)).all().item()
+
+
+@pytest.fixture(autouse=True, params=[False, True], ids=["stock-router", "fused-router"])
+def _router(request, monkeypatch):
+    """Round 7: every patch test also runs with the fused router tail (moelab/router.py)."""
+    monkeypatch.setattr(e2e, "FUSED_ROUTER", request.param)

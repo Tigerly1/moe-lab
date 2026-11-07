@@ -1,0 +1,35 @@
+{
+ "args": {
+  "model": "mlx-community/Qwen3-30B-A3B-4bit",
+  "variant": "moelab/variants/mlx/metal_q4_moe.py",
+  "tokens": 256,
+  "rounds": 3,
+  "quality": true,
+  "draft": null,
+  "num_draft": 3,
+  "max_t": 256,
+  "out": "runs/e2e_qwen3_r7_quality_plain.json",
+  "fused_router": false,
+  "context": 0,
+  "verify_chunks": null
+ },
+ "ppl": {
+  "stock": 30.803208764439358,
+  "variant": 30.823926547665252,
+  "fp32": 30.901705529202488
+ },
+ "pairs": {
+  "stock_vs_fp32": {
+   "top1_agreement": 0.9700374531835206,
+   "mean_abs_dnll": 0.07417027334148964
+  },
+  "variant_vs_fp32": {
+   "top1_agreement": 0.9662921348314607,
+   "mean_abs_dnll": 0.07204365730285645
+  },
+  "stock_vs_variant": {
+   "top1_agreement": 0.9737827715355806,
+   "mean_abs_dnll": 0.07385626714327809
+  }
+ }
+}

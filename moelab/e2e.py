@@ -18,7 +18,9 @@ from mlx_lm import load, stream_generate
 from mlx_lm.sample_utils import make_sampler
 
 from .mlx_backend import load_variant
+from .router import topk_norm
 
+FUSED_ROUTER = False  # round 7: moelab/router.py replaces softmax/argpartition/take/renorm (--fused-router)
 MAX_T = 256  # measured crossover: our kernels win up to T=256, parity at T=512 (runs/crossover_*.json)
 PROMPT = "Explain, step by step, how a mixture-of-experts transformer layer routes tokens to experts."
 
@@ -43,12 +45,15 @@ def patch(model, mod):
         T = x.size // x.shape[-1]
         if T > MAX_T or not getattr(cls, "_use_variant", False):
             return stock(self, x)
-        gates = mx.softmax(self.gate(x), axis=-1, precise=True)
         k = self.top_k
-        inds = mx.argpartition(gates, kth=-k, axis=-1)[..., -k:]
-        scores = mx.take_along_axis(gates, inds, axis=-1)
-        if self.norm_topk_prob:
-            scores /= mx.sum(scores, axis=-1, keepdims=True)
+        if FUSED_ROUTER and self.norm_topk_prob:
+            inds, scores = topk_norm(self.gate(x), k)
+        else:
+            gates = mx.softmax(self.gate(x), axis=-1, precise=True)
+            inds = mx.argpartition(gates, kth=-k, axis=-1)[..., -k:]
+            scores = mx.take_along_axis(gates, inds, axis=-1)
+            if self.norm_topk_prob:
+                scores /= mx.sum(scores, axis=-1, keepdims=True)
         y = mod.run(self._variant_state, x.reshape(T, -1), inds.reshape(T, k),
                     scores.reshape(T, k).astype(mx.float32))
         return y.reshape(x.shape)
@@ -76,7 +81,13 @@ def _patch_deepseek(model, mod):
         if T > MAX_T or not getattr(cls, "_use_variant", False):
             return stock(self, x)
         assert getattr(self, "sharding_group", None) is None, "tensor-parallel DeepSeek MoE not supported by the patch"
-        inds, scores = self.gate(x)
+        g = self.gate
+        if FUSED_ROUTER and g.topk_method != "group_limited_greedy":   # mlx-lm: anything else is greedy
+            inds, scores = topk_norm(x @ g.weight.T, g.top_k, norm=False)
+            if g.routed_scaling_factor != 1.0:
+                scores = scores * g.routed_scaling_factor
+        else:
+            inds, scores = g(x)
         k = inds.shape[-1]
         y = mod.run(self._variant_state, x.reshape(T, -1), inds.reshape(T, k),
                     scores.reshape(T, k).astype(mx.float32)).reshape(x.shape)
@@ -105,8 +116,11 @@ def _patch_gptoss(model, mod):
         if T > MAX_T or not getattr(cls, "_use_variant", False) or \
                 (T > 1 and T * k / self._variant_state["g"][0].shape[0] > 8):   # round 7 load policy
             return stock(self, x)
-        vals, inds = mlx_topk(self.router(x), k=k, axis=-1)
-        w = mx.softmax(vals, axis=-1, precise=True)
+        if FUSED_ROUTER:
+            inds, w = topk_norm(self.router(x), k)
+        else:
+            vals, inds = mlx_topk(self.router(x), k=k, axis=-1)
+            w = mx.softmax(vals, axis=-1, precise=True)
         y = mod.run(self._variant_state, x.reshape(T, -1), inds.reshape(T, k), w.reshape(T, k).astype(mx.float32))
         return y.reshape(x.shape)
 
@@ -207,11 +221,13 @@ def main():
     ap.add_argument("--num-draft", type=int, default=3)
     ap.add_argument("--max-t", type=int, default=MAX_T, help="use the variant for calls with <= this many tokens")
     ap.add_argument("--out", default=None)
+    ap.add_argument("--fused-router", action="store_true", help="fused top-k/normalize router tail (moelab/router.py)")
     ap.add_argument("--context", type=int, default=0, help="prompt of this many tokens (frozen corpus, repeated) before decoding")
     ap.add_argument("--verify-chunks", type=int, nargs="*", default=None,
                     help="acceptance-free verify benchmark with these chunk sizes, e.g. 1 2 4 7 16")
     a = ap.parse_args()
     globals()["MAX_T"] = a.max_t
+    globals()["FUSED_ROUTER"] = a.fused_router
     model, tok = load(a.model)
     draft = load(a.draft)[0] if a.draft else None
     cls, n = patch(model, load_variant(a.variant))
