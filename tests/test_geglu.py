@@ -50,3 +50,21 @@ def test_act(shape, T, act):
     assert err["finite"] and err["rel_fro"] < be.TOL["bfloat16"], err
     other = be.errors(y, be.reference(*m.dequant(st), x, idx, wts, act=1 - act))
     assert other["rel_fro"] > 3 * err["rel_fro"], "activation did not reach the kernel"
+
+
+@pytest.mark.parametrize("shape", SHAPES, ids=lambda s: s.name)
+@pytest.mark.parametrize("act", [0, 1])
+def test_run_slots(shape, act):
+    """v4 without the k-reduction (universal patch, T=1): every slot's output vs the fp32 reference of that slot."""
+    m = q4()
+    p = make_problem(shape, 1, "uniform", 7)
+    w = [mx.array(p[n]).astype(mx.bfloat16) for n in ("w_gate", "w_up", "w_down")]
+    st = m.prepare(*w)
+    x, idx = mx.array(p["x"]).astype(mx.bfloat16), mx.array(p["idx"], dtype=mx.int32)
+    ys = m.run_slots(st, x, idx, act)
+    assert ys.shape == (shape.k, shape.d)
+    deq = m.dequant(st)
+    for j in range(shape.k):
+        ref = be.reference(*deq, x, idx[:, j:j + 1], mx.ones((1, 1), mx.float32), act=act)
+        err = be.errors(ys[j:j + 1], ref)
+        assert err["finite"] and err["rel_fro"] < be.TOL["bfloat16"], (j, err)

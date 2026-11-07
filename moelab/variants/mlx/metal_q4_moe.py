@@ -46,6 +46,11 @@ def custom_wins(T, k, E, D, F):
     return load <= (24 if D * F >= 3 << 19 else 8)
 
 
+def run_slots(s, x, idx, act=0):
+    """T=1 per-slot expert outputs [k, D] (unweighted): the v4 GEMV without its k-reduction (round 9)."""
+    return _v4.run(s, x, idx, mx.ones(idx.shape, mx.float32), act, nored=True)
+
+
 def run(s, x, idx, wts, act=0):
     """act: 0 = SwiGLU (silu(gate) * up), 1 = GeGLU with tanh-GELU (Gemma-4)."""
     T, k = idx.shape

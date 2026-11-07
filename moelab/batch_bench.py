@@ -51,9 +51,11 @@ def main():
     ap.add_argument("--prompt-len", type=int, default=128)
     ap.add_argument("--rounds", type=int, default=3)
     ap.add_argument("--fused-router", action="store_true")
+    ap.add_argument("--universal", action="store_true", help="patch SwitchGLU itself (moelab/universal.py)")
     ap.add_argument("--out", default=None)
     a = ap.parse_args()
     e2e.FUSED_ROUTER = a.fused_router
+    e2e.UNIVERSAL = a.universal
     model, tok = load(a.model)
     cls, n = e2e.patch(model, load_variant(a.variant))
     ids = tok.encode(open(e2e.__file__.replace("e2e.py", "data/quality_corpus.txt")).read())

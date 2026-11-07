@@ -33,14 +33,21 @@ def _experts(layer):
 
 def pick_variant(model):
     mtype = getattr(model, "model_type", None) or model.args.model_type
-    sw = next(e for e in map(_experts, model.layers) if e is not None)
-    mode = getattr(sw.gate_proj, "mode", "affine")
+    sw = next((e for e in map(_experts, model.layers) if e is not None), None)
+    mode = getattr(sw.gate_proj, "mode", "affine") if sw is not None else None
     key = (mtype, mode)
-    if key not in VARIANTS:
-        raise SystemExit(f"no moe-lab kernel for {key}; supported: {sorted(VARIANTS)}")
-    if mode == "affine":
-        assert (sw.gate_proj.bits, sw.gate_proj.group_size) == (4, 64), "affine kernels need 4-bit, group 64"
-    return os.path.join(HERE, VARIANTS[key])
+    if key in VARIANTS:
+        if mode == "affine":
+            assert (sw.gate_proj.bits, sw.gate_proj.group_size) == (4, 64), "affine kernels need 4-bit, group 64"
+        return os.path.join(HERE, VARIANTS[key])
+    # round 9: any other mlx-lm MoE whose experts run through a 4-bit (group 64) SwitchGLU -> universal patch
+    from mlx_lm.models.switch_layers import SwitchGLU
+    sws = [m for _, m in model.named_modules() if isinstance(m, SwitchGLU)]
+    if sws and all((getattr(m.gate_proj, "bits", None), getattr(m.gate_proj, "group_size", None),
+                    getattr(m.gate_proj, "mode", "affine")) == (4, 64, "affine") for m in sws):
+        e2e.UNIVERSAL = True
+        return os.path.join(HERE, "variants/mlx/metal_q4_moe.py")
+    raise SystemExit(f"no moe-lab kernel for {key}; supported: {sorted(VARIANTS)} or any 4-bit g64 SwitchGLU model")
 
 
 def run(model, tok, prompt, max_tokens):

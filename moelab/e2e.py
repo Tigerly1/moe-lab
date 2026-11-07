@@ -20,6 +20,7 @@ from mlx_lm.sample_utils import make_sampler
 from .mlx_backend import load_variant
 from .router import topk_norm
 
+UNIVERSAL = False  # round 9: patch SwitchGLU itself (any mlx-lm MoE), moelab/universal.py (--universal)
 FUSED_ROUTER = False  # round 7: moelab/router.py replaces softmax/argpartition/take/renorm (--fused-router)
 MAX_T = 256  # stock above this many tokens; below it the dispatchers' own load policy decides (round 7)
 PROMPT = "Explain, step by step, how a mixture-of-experts transformer layer routes tokens to experts."
@@ -27,6 +28,10 @@ PROMPT = "Explain, step by step, how a mixture-of-experts transformer layer rout
 
 def patch(model, mod):
     """Swap expert compute of every Qwen3MoeSparseMoeBlock (or gpt-oss MLPBlock) for `mod.run` at decode."""
+    if UNIVERSAL:
+        from . import universal
+        universal.MAX_T = MAX_T
+        return universal.patch(model, mod)
     if getattr(model, "model_type", None) == "gpt_oss":
         return _patch_gptoss(model, mod)
     if getattr(model, "model_type", None) in ("deepseek_v2", "deepseek_v3"):
@@ -45,7 +50,7 @@ def patch(model, mod):
 
     def call(self, x):
         T = x.size // x.shape[-1]
-        if T > MAX_T or not getattr(cls, "_use_variant", False):
+        if T > MAX_T or not getattr(cls, "_use_variant", False) or not hasattr(self, "_variant_state"):
             return stock(self, x)
         k = self.top_k
         if FUSED_ROUTER and self.norm_topk_prob:
@@ -83,7 +88,7 @@ def _patch_gemma4(model, mod):
 
     def call(self, x, inds, w):
         T = x.size // x.shape[-1]
-        if T > MAX_T or not getattr(cls, "_use_variant", False):
+        if T > MAX_T or not getattr(cls, "_use_variant", False) or not hasattr(self, "_variant_state"):
             return stock(self, x, inds, w)
         k = inds.shape[-1]
         return mod.run(self._variant_state, x.reshape(T, -1), inds.reshape(T, k),
@@ -124,7 +129,7 @@ def _patch_deepseek(model, mod):
 
     def call(self, x):
         T = x.size // x.shape[-1]
-        if T > MAX_T or not getattr(cls, "_use_variant", False):
+        if T > MAX_T or not getattr(cls, "_use_variant", False) or not hasattr(self, "_variant_state"):
             return stock(self, x)
         assert getattr(self, "sharding_group", None) is None, "tensor-parallel DeepSeek MoE not supported by the patch"
         g = self.gate
@@ -160,7 +165,7 @@ def _patch_gptoss(model, mod):
     def call(self, x):
         T = x.size // x.shape[-1]
         k = self.num_experts_per_tok
-        if T > MAX_T or not getattr(cls, "_use_variant", False) or \
+        if T > MAX_T or not getattr(cls, "_use_variant", False) or not hasattr(self, "_variant_state") or \
                 (T > 1 and T * k / self._variant_state["g"][0].shape[0] > 16):   # round 7 load policy (runs/grid_mxfp4.json, gpt-oss shape)
             return stock(self, x)
         if FUSED_ROUTER:
@@ -281,12 +286,14 @@ def main():
     ap.add_argument("--out", default=None)
     ap.add_argument("--fused-router", action="store_true", help="fused top-k/normalize router tail (moelab/router.py)")
     ap.add_argument("--chat", action="store_true", help="wrap PROMPT in the model's chat template")
+    ap.add_argument("--universal", action="store_true", help="patch SwitchGLU itself (moelab/universal.py)")
     ap.add_argument("--context", type=int, default=0, help="prompt of this many tokens (frozen corpus, repeated) before decoding")
     ap.add_argument("--verify-chunks", type=int, nargs="*", default=None,
                     help="acceptance-free verify benchmark with these chunk sizes, e.g. 1 2 4 7 16")
     a = ap.parse_args()
     globals()["MAX_T"] = a.max_t
     globals()["FUSED_ROUTER"] = a.fused_router
+    globals()["UNIVERSAL"] = a.universal
     model, tok = load(a.model)
     draft = load(a.draft)[0] if a.draft else None
     cls, n = patch(model, load_variant(a.variant))

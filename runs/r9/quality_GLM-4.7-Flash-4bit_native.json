@@ -1,0 +1,38 @@
+{
+ "args": {
+  "model": "mlx-community/GLM-4.7-Flash-4bit",
+  "variant": "moelab/variants/mlx/metal_q4_moe.py",
+  "tokens": 256,
+  "rounds": 3,
+  "quality": true,
+  "quality_text": "runs/r9/native_GLM-4.7-Flash-4bit.txt",
+  "draft": null,
+  "num_draft": 3,
+  "max_t": 256,
+  "out": "runs/r9/quality_GLM-4.7-Flash-4bit_native.json",
+  "fused_router": false,
+  "chat": false,
+  "universal": true,
+  "context": 0,
+  "verify_chunks": null
+ },
+ "ppl": {
+  "stock": 2.3313049407506887,
+  "variant": 2.336257003241328,
+  "fp32": 2.336286870700954
+ },
+ "pairs": {
+  "stock_vs_fp32": {
+   "top1_agreement": 0.9701834862385321,
+   "mean_abs_dnll": 0.05531708786793805
+  },
+  "variant_vs_fp32": {
+   "top1_agreement": 0.9655963302752294,
+   "mean_abs_dnll": 0.057375979396181366
+  },
+  "stock_vs_variant": {
+   "top1_agreement": 0.963302752293578,
+   "mean_abs_dnll": 0.05621107401104149
+  }
+ }
+}

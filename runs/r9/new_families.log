@@ -1,0 +1,34 @@
+== LFM2.5-8B-A1B-MLX-4bit
+stock      PPL 2.7322
+variant    PPL 2.7126
+fp32       PPL 2.7364
+stock   vs fp32   : top-1 agreement  97.05%  mean |dNLL| 0.0379
+variant vs fp32   : top-1 agreement  96.36%  mean |dNLL| 0.0421
+stock   vs variant: top-1 agreement  95.68%  mean |dNLL| 0.0398
+patched 22 MoE blocks with moelab/variants/mlx/metal_q4_moe.py
+guard: probe min 243 GB/s vs p90 248 for Apple M4 Pro|battery (98%) -> ok
+speedup 1.040x | greedy tokens identical: 51/512 (first diff at 38)
+patched 22 MoE blocks with moelab/variants/mlx/metal_q4_moe.py
+guard: probe min 241 GB/s vs p90 248 for Apple M4 Pro|battery (97%) -> ok
+speedup 1.038x | greedy tokens identical: 51/512 (first diff at 38)
+B=  1: stock   180.8 tok/s  variant   187.8 tok/s  speedup 1.039x  (stock 180.7-180.8, variant 187.8-187.8) identical-prefix median 128/128
+B=  8: stock   305.6 tok/s  variant   380.4 tok/s  speedup 1.245x  (stock 305.5-306.2, variant 370.9-398.5) identical-prefix median 128/128
+B= 32: stock   503.1 tok/s  variant   747.2 tok/s  speedup 1.485x  (stock 489.3-509.6, variant 700.6-784.2) identical-prefix median 54/128
+guard: probe min 234 GB/s vs p90 241 for Apple M4 Pro|ac (97%) -> ok
+== GLM-4.7-Flash-4bit
+stock      PPL 2.3313
+variant    PPL 2.3363
+fp32       PPL 2.3363
+stock   vs fp32   : top-1 agreement  97.02%  mean |dNLL| 0.0553
+variant vs fp32   : top-1 agreement  96.56%  mean |dNLL| 0.0574
+stock   vs variant: top-1 agreement  96.33%  mean |dNLL| 0.0562
+patched 46 MoE blocks with moelab/variants/mlx/metal_q4_moe.py
+guard: probe min 235 GB/s vs p90 242 for Apple M4 Pro|ac (97%) -> ok
+speedup 1.033x | greedy tokens identical: 31/512 (first diff at 25)
+patched 46 MoE blocks with moelab/variants/mlx/metal_q4_moe.py
+guard: probe min 203 GB/s vs p90 242 for Apple M4 Pro|ac (84%) -> CONTENDED - absolute numbers unreliable, close other GPU users and re-run
+speedup 1.068x | greedy tokens identical: 31/512 (first diff at 25)
+B=  1: stock    63.3 tok/s  variant    65.8 tok/s  speedup 1.040x  (stock 60.2-64.9, variant 63.0-67.8) identical-prefix median 8/128
+B=  8: stock   125.3 tok/s  variant   140.0 tok/s  speedup 1.117x  (stock 125.0-125.4, variant 139.9-140.2) identical-prefix median 12/128
+B= 32: stock   176.5 tok/s  variant   225.1 tok/s  speedup 1.276x  (stock 176.3-179.1, variant 223.8-225.2) identical-prefix median 5/128
+guard: probe min 200 GB/s vs p90 242 for Apple M4 Pro|ac (83%) -> CONTENDED - absolute numbers unreliable, close other GPU users and re-run

@@ -120,6 +120,14 @@ DOWN_SRC = """
             acc[r] += float(ds[rr * NG + grp]) * d + float(db[rr * NG + grp]) * hsum;
         }
     }
+    if (NORED) {   // per-slot outputs y[slot, :] (no weight, no k-sum): universal SwitchGLU patch, round 9
+        for (uint r = 0; r < R; ++r) {
+            float a = acc[r];
+            for (uint o = LPR / 2; o > 0; o >>= 1) a += simd_shuffle_xor(a, o);
+            if (sub == 0 && ok) y[slot * D + row0 + r] = T(a);
+        }
+        return;
+    }
     float w = wts[slot];
     for (uint r = 0; r < R; ++r) {
         float a = acc[r];
@@ -160,7 +168,8 @@ def dequant(s):
     return tuple(mx.dequantize(*s[n], group_size=GS, bits=BITS) for n in ("g", "u", "d"))
 
 
-def run(s, x, idx, wts, act=0):
+def run(s, x, idx, wts, act=0, nored=False):
+    """nored=True: return per-slot expert outputs [T*k, D] (unweighted, not summed over k)."""
     T, k = idx.shape
     (gq, gs, gb), (uq, us, ub), (dq, ds, db) = s["g"], s["u"], s["d"]
     F, D = gq.shape[1], dq.shape[1]
@@ -170,6 +179,6 @@ def run(s, x, idx, wts, act=0):
             output_shapes=[(T * k, F)], output_dtypes=[x.dtype])[0]
     lpr = _lpr(F // 32)
     rb = R_DOWN * 32 // lpr
-    return _k2(inputs=[h, dq, ds, db, idx, wts.flatten()], template=base + [("R", R_DOWN), ("LPR", lpr)],
+    return _k2(inputs=[h, dq, ds, db, idx, wts.flatten()], template=base + [("R", R_DOWN), ("LPR", lpr), ("NORED", int(nored))],
                grid=(32 * (-(-D // rb)), T * k, 1), threadgroup=(32, k, 1),
-               output_shapes=[(T, D)], output_dtypes=[x.dtype])[0]
+               output_shapes=[(T * k if nored else T, D)], output_dtypes=[x.dtype])[0]

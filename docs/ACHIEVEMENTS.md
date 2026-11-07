@@ -3,6 +3,30 @@
 Verified results only: re-measured (≥2 process launches or `moelab.compare`), guard ok. Newest first.
 Hardware: Apple M4 Pro, 48 GB, unless stated. Details and caveats: `docs/RESULTS.md`.
 
+## 2026-11-07 — round 9c: one patch for every MoE in mlx-lm; Gemma-4 / Qwen3.6 on a real server
+
+- **Universal patch** (`moelab/universal.py`): replaces `SwitchGLU` itself. Each (token, expert) slot is a row with k=1, and at T=1 the k-slot GEMV runs without its k-reduction (`run_slots`, v4 `NORED`). Routing, weighting and shared experts stay the model's own code. `moelab.generate` / `moelab.serve` select it automatically for any 4-bit g64 SwitchGLU model without a dedicated patch.
+- **Exactness:** with the bit-identical fallback as the kernel, logits equal stock on tiny models of 6 families with different routers: Qwen3-MoE, Qwen3.5, Gemma-4, LFM2-MoE, GLM-4.7-Flash, DeepSeek-V2. In total 778 tests pass.
+- **Cost vs a dedicated patch** (Qwen3, kernels only, no fused router): 1.075× / 1.076× vs 1.086×.
+
+**New families,** single stream (`--chat`, 2 launches) and concurrent requests (BatchGenerator):
+
+| model | 1 chat | B=8 | B=32 |
+|---|---|---|---|
+| LFM2.5-8B-A1B 4-bit | 1.040× / 1.038× | 1.25× / 1.31× | **1.49× / 1.52×** (556 → 846 tok/s) |
+| GLM-4.7-Flash 4-bit | 1.033× / 1.034× | 1.12× | **1.27×** (180 → 229 tok/s) |
+
+- **Quality** on model-native text: PPL within 1%, top-1 agreement within noise. Two contended GLM runs were discarded and re-measured.
+
+**Real `mlx_lm.server`** (`moelab.serve`, 256 tokens per reply, 2 rounds):
+
+| model | 1 client | 8 clients | 32 clients |
+|---|---|---|---|
+| Gemma-4-26B-A4B | 1.11× | 1.18× | **1.43×** (152 → 218 tok/s; median reply 53 → 38 s) |
+| Qwen3.6-35B-A3B | 1.07× | 1.08× | 1.13× (179 → 203 tok/s; 38 → 35 s) |
+
+On the server, Qwen3.6 gains less than in BatchGenerator (1.24×) because a larger share of server time is prefill, which our kernels do not touch.
+
 ## 2026-11-07 — round 9b: MMA tiles on every 4-bit shape, Gemma-4 at 32 requests 1.25× → 1.70×
 
 - **The cause.** The MMA expert tiles were gated on D, F % 128. Gemma-4 (F=704) therefore fell to scalar tiles, which are 2× slower than stock at load 4. The MMA kernels only need D, F % 64, which always holds with group-64 quantization.

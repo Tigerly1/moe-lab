@@ -1,0 +1,20 @@
+[gMASK]<sop><|user|>Explain how a mixture-of-experts transformer layer routes tokens to experts, why it saves compute, and what problems appear when serving it on a laptop GPU.<|assistant|><think>The user wants an explanation of the Mixture-of-Experts (MoE) transformer layer, specifically focusing on:
+1.  How it routes tokens to experts.
+2.  Why it saves compute.
+3.  What problems arise when serving it on a laptop GPU.
+
+**Part 1: How it routes tokens to experts**
+*   *Concept:* Standard Transformer (like GPT-3 or Llama) has one big matrix multiplication (Attention + FFN) for every token. MoE replaces the FFN (Feed-Forward Network) with a set of smaller, specialized FFNs (experts).
+*   *Routing Mechanism:*
+    *   There's a "Gating Network" (usually a small linear layer).
+    *   It takes the input token embeddings (or hidden states).
+    *   It outputs a probability distribution over the available experts (e.g., 8 experts, 5 active per token).
+    *   Top-k selection: For each token, the top $k$ experts (e.g., top-2) are selected based on the highest probabilities.
+    *   Load Balancing: A small loss term is added to the training objective to ensure all experts get used roughly equally, preventing dead experts.
+    *   Output: The selected tokens are passed to the selected experts, and the outputs are combined (usually a weighted sum) to form the final hidden state.
+
+**Part 2: Why it saves compute**
+*   *Standard Transformer Cost:* $O(L \times d^2)$ roughly, where $L$ is sequence length and $d$ is hidden dimension. The FFN is the heavy lifter.
+*   *MoE Cost:*
+    *   The FFN is replaced by $N$ smaller FFNs, where $N$ is the number of experts, and each expert has dimension $d/N$ (roughly).
+    *   Total parameters: $N \times (d/N)^2
