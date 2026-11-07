@@ -76,7 +76,7 @@ a{color:var(--accent)}
   <div class="kpi"><b>+9.0%</b><span>end-to-end decode, Qwen3-30B-A3B-4bit, AC: 91.6 → 99.8 tok/s</span></div>
   <div class="kpi"><b>98.5%</b><span>of the measured memory-bandwidth floor at T=1 (mlx-lm: 79%)</span></div>
   <div class="kpi"><b>+45%</b><span>full-model verify step of 16 tokens, same text both arms (193 → 279 tok/s)</span></div>
-  <div class="kpi"><b>2.44×</b><span>MoE layer at T=32 consecutive tokens (real routing), tiles_v2 kernel</span></div>
+  <div class="kpi"><b>2 models</b><span>end-to-end gains on Qwen3-30B-A3B (int4) and gpt-oss-20b (MXFP4): +9.0% and +7.6% plain decode</span></div>
 </div>
 
 <section>
@@ -171,6 +171,7 @@ a{color:var(--accent)}
 <section>
   <h2>5b. Same idea, the gpt-oss format: MXFP4</h2>
   <p class="prose">MXFP4 stores each weight as a 4-bit float (E2M1) with one power-of-two scale per 32 weights: 4.25 bits, no bias term. Round 4 of autoresearch ported both kernels to it. The key trick decodes two FP4 values into a <code>half2</code> with a single bit expression, exact including subnormals, and folds the leftover 2<sup>14</sup> into the scale. Every point below beats mlx-lm's own MXFP4 path, including three model shapes the agent never saw.</p>
+  <p class="hand">Correction: the first version overflowed a half scale on real checkpoints (E8M0 ≥ 129, ~11% of gpt-oss down groups). It was found by running the real gpt-oss and fixed with a regression test. The fix costs 8–11% at T ≥ 16, and the chart shows the corrected numbers.</p>
   <div class="fig">
     <div class="plot"><canvas id="cM" role="img" aria-label="MXFP4 speedup vs T for gpt-oss-20b, Qwen3, gpt-oss-120b, Mixtral, DeepSeek-V2-Lite">Qwen3 traces: 1.26 to 2.42; gpt-oss-20b: 1.16 to 1.69.</canvas></div>
     <aside><p class="hand">Decoding FP4 costs about the same as int4: no bias term and no x prescale pay for the bit trick.</p><p class="hand">So MXFP4 is faster than int4 by roughly its byte ratio: Qwen3 T=1 at 106 vs 114 µs.</p></aside>
@@ -193,6 +194,8 @@ a{color:var(--accent)}
       <tr><td>plain decode, battery, 256 tok (v31, earlier)</td><td>85.3</td><td>91.3</td><td>+7.1%</td></tr>
       <tr><td>speculative, 6 drafts, outputs identical 512/512</td><td>76.5</td><td>92.3</td><td>+20.8%</td></tr>
       <tr class="lose"><td>speculative, 3 drafts, outputs diverge at token 22</td><td>71.8</td><td>67.4</td><td>confounded</td></tr>
+      <tr class="win"><td>gpt-oss-20b (MXFP4), plain decode, 512 tok</td><td>75.5</td><td>81.2</td><td>+7.6%</td></tr>
+      <tr class="win"><td>gpt-oss-20b, verify step of 4 / 16 tokens</td><td>125.9 / 174.8</td><td>161.6 / 287.7</td><td>+28% / +65%</td></tr>
     </tbody></table></div>
   <p class="hand">Pitfall: once the two arms generate different text, draft acceptance differs (0.63 vs 0.54) and tok/s no longer compares kernels. That is why the verify benchmark exists.</p>
   <p class="prose">Quality: teacher-forced perplexity on a frozen 1000-token corpus is 21.17 (stock), 21.15 (ours) and 21.02 (fp32 experts). All pairs agree on top-1 95.8–96.2% of the time, which is the model's bf16 noise floor. Layer-level error vs fp32 is 2× lower for our kernel (3.5e-3 vs 6.9e-3).</p>
@@ -270,11 +273,11 @@ a{color:var(--accent)}
       options:Object.assign(so,{parsing:false})}));
     const P=(ts,ys)=>ts.map((t,i)=>({x:t,y:ys[i]}));
     charts.push(new Chart(document.getElementById('cM'),{type:'line',data:{datasets:[
-      {label:'Qwen3-30B, traces',data:P([1,2,4,8,16,32],[1.264,1.412,1.536,1.786,2.064,2.424]),borderColor:c.accent,backgroundColor:c.accent},
-      {label:'gpt-oss-20b',data:P([1,2,4,8,16],[1.164,1.156,1.285,1.521,1.688]),borderColor:c.warm,backgroundColor:c.warm},
-      {label:'gpt-oss-120b (held-out)',data:P([1,4,8,16],[1.168,1.135,1.167,1.242]),borderColor:c.warm,backgroundColor:c.warm,borderDash:[5,4]},
-      {label:'Mixtral (held-out)',data:P([1,4,8],[1.045,1.385,1.923]),borderColor:c.good,backgroundColor:c.good,borderDash:[5,4]},
-      {label:'DeepSeek-V2-Lite (held-out)',data:P([1,4,8,16],[1.184,1.248,1.353,1.448]),borderColor:c.muted,backgroundColor:c.muted,borderDash:[5,4]}]},
+      {label:'Qwen3-30B, traces',data:P([1,2,4,8,16,32],[1.264,1.412,1.536,1.644,1.885,2.148]),borderColor:c.accent,backgroundColor:c.accent},
+      {label:'gpt-oss-20b',data:P([1,2,4,8,16],[1.164,1.156,1.285,1.504,1.559]),borderColor:c.warm,backgroundColor:c.warm},
+      {label:'gpt-oss-120b (held-out)',data:P([1,4,8,16],[1.168,1.135,1.164,1.240]),borderColor:c.warm,backgroundColor:c.warm,borderDash:[5,4]},
+      {label:'Mixtral (held-out)',data:P([1,4,8],[1.045,1.385,1.765]),borderColor:c.good,backgroundColor:c.good,borderDash:[5,4]},
+      {label:'DeepSeek-V2-Lite (held-out)',data:P([1,4,8,16],[1.184,1.248,1.343,1.384]),borderColor:c.muted,backgroundColor:c.muted,borderDash:[5,4]}]},
       options:Object.assign(base(c,'tokens per step T','speedup vs mlx-lm MXFP4 (×)',true),{parsing:false})}));
     charts.push(new Chart(document.getElementById('cV'),{type:'bar',data:{labels:['1','2','4','7','16'],datasets:[
       {label:'stock mlx-lm',data:[74.5,102.6,127.5,126.9,192.6],backgroundColor:c.muted,borderRadius:3},
