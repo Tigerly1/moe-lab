@@ -334,36 +334,44 @@ DOWN_E_SRC = MMA_HEAD.replace("%SMALL%", """    if (n == 2 && NSMALL >= 2) {   /
         return;
     }
 """) + """
+    if (threadgroup_position_in_grid.x % MR) return;   // MMA tiles: one threadgroup per 16 rows (B reused twice)
     const device T* ha = h + s0 * F + fm * 8;
     const device T* hb = h + s1 * F + fm * 8;
     const device uint2* d2 = (const device uint2*)(dq + rr * NW) + fn / 2;
-    simdgroup_matrix<float, 8, 8> C = make_filled_simdgroup_matrix<float, 8, 8>(0.f);
-    simdgroup_matrix<float, 8, 8> P;
+    simdgroup_matrix<float, 8, 8> C0 = make_filled_simdgroup_matrix<float, 8, 8>(0.f), C1 = C0;
+    simdgroup_matrix<float, 8, 8> P0, P1;
     simdgroup_matrix<MT, 8, 8> A, B;
     for (uint g = ks; g < NB; g += SGK) {
-        uint2 w = d2[g * 4];
+        uint2 w = d2[g * 4], w1 = d2[4 * NW + g * 4];
         uint pw[2] = {(w.x & 0xFFFFu) | (w.y << 16), (w.x >> 16) | (w.y & 0xFFFF0000u)};
+        uint qw[2] = {(w1.x & 0xFFFFu) | (w1.y << 16), (w1.x >> 16) | (w1.y & 0xFFFF0000u)};
         vec<T, 4> a0 = ((const device vec<T, 4>*)(ha + g * 64))[0], a1 = ((const device vec<T, 4>*)(ha + g * 64))[1];
         vec<T, 4> b0 = ((const device vec<T, 4>*)(hb + g * 64))[0], b1 = ((const device vec<T, 4>*)(hb + g * 64))[1];
         for (uint s = 0; s < 8; ++s) {
-            { vec<MT, 2> v_ = ar_qo2<MT>(pw[s / 4], s % 4); A.thread_elements()[0] = v_.x; A.thread_elements()[1] = v_.y; }
             B.thread_elements()[0] = MT(s < 4 ? a0[s] : a1[s - 4]); B.thread_elements()[1] = MT(s < 4 ? b0[s] : b1[s - 4]);
-            if (s == 0) simdgroup_multiply(P, A, B);
-            else simdgroup_multiply_accumulate(P, A, B, P);
+            { vec<MT, 2> v_ = ar_qo2<MT>(pw[s / 4], s % 4); A.thread_elements()[0] = v_.x; A.thread_elements()[1] = v_.y; }
+            if (s == 0) simdgroup_multiply(P0, A, B); else simdgroup_multiply_accumulate(P0, A, B, P0);
+            { vec<MT, 2> v_ = ar_qo2<MT>(qw[s / 4], s % 4); A.thread_elements()[0] = v_.x; A.thread_elements()[1] = v_.y; }
+            if (s == 0) simdgroup_multiply(P1, A, B); else simdgroup_multiply_accumulate(P1, A, B, P1);
         }
         float2 sx = ar_colsum(a0, a1, b0, b1);
-        uint grp = rr * NB + g;
+        uint grp = rr * NB + g, grp1 = grp + 8 * NB;
         float sc = float(ds[grp]), bi = float(db[grp]) - OFF * sc;
-        for (uint i = 0; i < 2; ++i) C.thread_elements()[i] = fma(sc, P.thread_elements()[i], fma(bi, sx[i], C.thread_elements()[i]));
+        float sc1 = float(ds[grp1]), bi1 = float(db[grp1]) - OFF * sc1;
+        for (uint i = 0; i < 2; ++i) {
+            C0.thread_elements()[i] = fma(sc, P0.thread_elements()[i], fma(bi, sx[i], C0.thread_elements()[i]));
+            C1.thread_elements()[i] = fma(sc1, P1.thread_elements()[i], fma(bi1, sx[i], C1.thread_elements()[i]));
+        }
     }
-    for (uint i = 0; i < 2; ++i) red[ks * 128 + lane * 2 + i] = C.thread_elements()[i];
+    for (uint i = 0; i < 2; ++i) { red[ks * 128 + lane * 2 + i] = C0.thread_elements()[i]; red[ks * 128 + 64 + lane * 2 + i] = C1.thread_elements()[i]; }
     threadgroup_barrier(mem_flags::mem_threadgroup);
     if (ks != 0) return;
+    for (uint r = 0; r < 2; ++r)
     for (uint i = 0; i < 2; ++i) {
         float a = 0.f;
-        for (uint j = 0; j < SGK; ++j) a += red[j * 128 + lane * 2 + i];
+        for (uint j = 0; j < SGK; ++j) a += red[j * 128 + r * 64 + lane * 2 + i];
         uint slot = i ? s1 : s0;
-        if (fn + i < n) y[slot * D + row0 + fm] = wts[slot] * a;
+        if (fn + i < n) y[slot * D + row0 + 8 * r + fm] = wts[slot] * a;
     }
 """
 # map kernel: slot p leads a tile iff its rank among slots of the same expert is a multiple of VT.
@@ -382,7 +390,7 @@ MAP_SRC = """
 _k0 = mx.fast.metal_kernel(name="ar_tiles_map", input_names=["idx"], output_names=["tl"], source=MAP_SRC)
 _k1e = mx.fast.metal_kernel(name="ar_tiles_gate_up_e6", input_names=["x", "gq", "gs", "gb", "uq", "us", "ub", "idx", "tl"],
                             output_names=["h"], source=GATE_UP_E_SRC, header=HEADER)
-_k2e = mx.fast.metal_kernel(name="ar_tiles_down_e3_lpr", input_names=["h", "dq", "ds", "db", "idx", "wts", "tl"],
+_k2e = mx.fast.metal_kernel(name="ar_tiles_down_e6_lpr", input_names=["h", "dq", "ds", "db", "idx", "wts", "tl"],
                             output_names=["y"], source=DOWN_E_SRC, header=HEADER)
 VT = 8
 SGK_UP = 8  # simdgroups per 8-row block: K split on the MMA path, 8 // SGK rows each on the small path
@@ -444,7 +452,7 @@ def _run_e(base, x, gq, gs, gb, uq, us, ub, dq, ds, db, idx, wts, T, k, F, D):
     lpr = _lpr(F // 32)
     sgk = max(1, lpr // (4 * R_DOWN))
     lpr = max(lpr, 4 * sgk)  # RS = 8 / sgk rows must fill 32 / lpr row groups
-    yp = _k2e(inputs=[h, dq, ds, db, idx, wts.flatten(), tl], template=tm + [("NR", D), ("NK", F), ("SGK", sgk), ("MR", 1), ("NSMALL", NSMALL), ("RS", 8 // sgk), ("LPR", lpr)],
+    yp = _k2e(inputs=[h, dq, ds, db, idx, wts.flatten(), tl], template=tm + [("NR", D), ("NK", F), ("SGK", sgk), ("MR", 2), ("NSMALL", NSMALL), ("RS", 8 // sgk), ("LPR", lpr)],
               grid=(32 * sgk * D // 8, T * k, 1), threadgroup=(32 * sgk, 1, 1),
               output_shapes=[(T * k, D)], output_dtypes=[mx.float32])[0]
     return _k3(inputs=[yp], template=[("T", x.dtype), ("D", D), ("K", k), ("NT", T)],
