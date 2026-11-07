@@ -1,0 +1,26 @@
+{
+ "args": {
+  "model": "mlx-community/Qwen3-30B-A3B-4bit",
+  "variant": "moelab/variants/mlx/metal_q4_tiles_mma.py",
+  "tokens": 256,
+  "rounds": 3,
+  "quality": false,
+  "draft": "mlx-community/Qwen3-0.6B-4bit",
+  "num_draft": 6,
+  "max_t": 16,
+  "out": "runs/e2e_spec_nd6_mma.json"
+ },
+ "stock": [
+  62.976344443826314,
+  63.51672374988779,
+  63.52944731026318
+ ],
+ "variant": [
+  77.23884603608084,
+  77.24721114166387,
+  77.32782717500227
+ ],
+ "speedup": 1.2161712157233289,
+ "len_stock": 256,
+ "len_variant": 256
+}
