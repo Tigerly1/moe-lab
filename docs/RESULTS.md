@@ -431,6 +431,19 @@ The crossover pattern is the same as Qwen3.
 - **Example (Qwen3-30B-A3B-4bit, single run after warmup):** prompt ~30 tokens 171.6 → 213.8 tok/s, decode 94.3 → 103.1 tok/s.
 - **Limitation: cold start.** The custom Metal kernels are JIT-compiled on first use, adding about 0.4 s to the first request. The first unwarmed run measured 56 tok/s prompt throughput. Every benchmark in this document warms up first.
 
+## Final reproduction run (2026-11-07 05:39–05:47, `scripts/reproduce_headline.sh`, seeds 5000+, AC)
+All headline numbers were reproduced from scratch in one run. Output: `runs/repro/` and `runs/repro_log.txt`.
+
+| check | result |
+|---|---|
+| tests incl. full-model multi-token (`MOE_SLOW=1`) | **327 passed**, 3 xfailed (historical kernel) |
+| int4 dispatcher, Qwen3 traces, T=1/8/16/32 | 1.206 / 1.719 / 2.049 / 2.448 |
+| MXFP4, Qwen3 traces, T=1/8/16/32 | 1.262 / 1.734 / 2.068 / 2.404 |
+| int4, Qwen3-235B (clean held-out), T=1/16 | 1.065 / 1.262 |
+| T=1 slope, non-repeating routing (Qwen3) | mlx-lm 76.7% / v4 93.4% of floor, 1.218× |
+| Qwen3 e2e: plain / verify 4 / 16 / 32 | +9.0% / +22.8% / +48.4% / +83.5% |
+| gpt-oss e2e: plain / verify 4 / 16 | +8.0% / +27.4% / +69.6% |
+
 ## Open problems / next steps
 1. ~~Small-batch + skewed routing~~ → solved by `metal_q4_tiles_mma` (round 1). Remaining: gpt-oss (d % 128 ≠ 0) tail path, T=2 with uniform routing (round 3 running).
 2. **Regime dispatcher:** v31 for T ≤ 16, sorted `gather_qmm` above. The crossover sits around T≈16–32 on Qwen3 (RQ1).

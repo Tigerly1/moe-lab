@@ -1,0 +1,3 @@
+qwen3-30b-a3b T=1 uniform windows=80: residual-add-only slope 2.5us (fixed 192us)
+  mlxlm_switchglu_q4     per-call   113.4us  minus residual   111.0us  fixed/eval    203us  floor   85.1us   76.7% of floor@250  speedup 1.000x
+  metal_q4_decode_v4     per-call    93.6us  minus residual    91.1us  fixed/eval    133us  floor   85.1us   93.4% of floor@250  speedup 1.218x

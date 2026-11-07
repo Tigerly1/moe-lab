@@ -1,0 +1,38 @@
+Now drawing from 'AC Power'
+== 1. correctness (unit, large/tiny scales, real checkpoints, full-model multi-token)
+327 passed, 3 xfailed in 22.33s
+== 2. layer level, real traces, fresh seeds, CI by launch
+A=mlxlm_switchglu_q4.py  B=metal_q4_moe.py  shape=qwen3-30b-a3b bfloat16 trace  6 launches x 4 rounds
+T=  1  A    134.0us  B    111.1us  B is 1.206x  [95% CI 1.196-1.214, by launch]  err A 6.7e-03 B 3.5e-03
+T=  8  A    636.8us  B    370.5us  B is 1.719x  [95% CI 1.665-1.752, by launch]  err A 6.4e-03 B 3.5e-03
+T= 16  A   1183.9us  B    577.9us  B is 2.049x  [95% CI 1.893-2.109, by launch]  err A 6.6e-03 B 3.5e-03
+T= 32  A   2266.2us  B    925.8us  B is 2.448x  [95% CI 2.268-2.569, by launch]  err A 6.6e-03 B 3.4e-03
+A=mlxlm_switchglu_mxfp4.py  B=metal_mxfp4_moe.py  shape=qwen3-30b-a3b bfloat16 trace  6 launches x 4 rounds
+T=  1  A    134.9us  B    106.9us  B is 1.262x  [95% CI 1.250-1.268, by launch]  err A 6.2e-03 B 2.3e-03
+T=  8  A    641.9us  B    370.3us  B is 1.734x  [95% CI 1.698-1.763, by launch]  err A 6.0e-03 B 2.3e-03
+T= 16  A   1196.6us  B    578.7us  B is 2.068x  [95% CI 1.948-2.103, by launch]  err A 6.0e-03 B 2.4e-03
+T= 32  A   2288.3us  B    952.0us  B is 2.404x  [95% CI 2.240-2.505, by launch]  err A 6.0e-03 B 2.3e-03
+A=mlxlm_switchglu_q4.py  B=metal_q4_moe.py  shape=qwen3-235b-a22b bfloat16 uniform  4 launches x 4 rounds
+T=  1  A    382.5us  B    359.1us  B is 1.065x  [95% CI 1.063-1.068, by launch]  err A 7.0e-03 B 3.4e-03
+T= 16  A   4417.4us  B   3500.1us  B is 1.262x  [95% CI 1.248-1.269, by launch]  err A 6.8e-03 B 3.4e-03
+== 3. T=1 slope timing, non-repeating routing
+qwen3-30b-a3b T=1 uniform windows=80: residual-add-only slope 2.5us (fixed 192us)
+  mlxlm_switchglu_q4     per-call   113.4us  minus residual   111.0us  fixed/eval    203us  floor   85.1us   76.7% of floor@250  speedup 1.000x
+  metal_q4_decode_v4     per-call    93.6us  minus residual    91.1us  fixed/eval    133us  floor   85.1us   93.4% of floor@250  speedup 1.218x
+== 4. end to end
+Fetching 12 files:   0%|          | 0/12 [00:00<?, ?it/s]Fetching 12 files: 100%|██████████| 12/12 [00:00<00:00, 2884.50it/s]
+stock   91.5 tok/s  [91.54502705095322, 91.51031792244837, 91.63815894386603]
+variant 99.8 tok/s  [99.77965001195929, 99.75029226844573, 99.81100077429738]
+speedup 1.090x | greedy tokens identical: 44/512 (first diff at 22)
+Fetching 12 files:   0%|          | 0/12 [00:00<?, ?it/s]Fetching 12 files: 100%|██████████| 12/12 [00:00<00:00, 2161.73it/s]
+verify chunk=4: stock 127.2 tok/s  variant 156.3 tok/s  speedup 1.228x  (248 steps, rounds {'stock': [127.2047969875067, 127.20351858240157, 128.03438617021914], 'variant': [156.26512897885053, 156.18827244553663, 156.32950099236834]})
+verify chunk=16: stock 194.9 tok/s  variant 289.1 tok/s  speedup 1.484x  (62 steps, rounds {'stock': [195.06480632483562, 194.8806056575836, 194.8589516945344], 'variant': [288.9787558700126, 289.40666227737233, 289.1316519584208]})
+verify chunk=32: stock 237.3 tok/s  variant 435.6 tok/s  speedup 1.835x  (31 steps, rounds {'stock': [237.2151585834881, 237.34391818588674, 237.43421926809694], 'variant': [435.7285714902681, 435.2663201402284, 435.5689148199791]})
+Fetching 10 files:   0%|          | 0/10 [00:00<?, ?it/s]Fetching 10 files: 100%|██████████| 10/10 [00:00<00:00, 2440.25it/s]
+stock   75.3 tok/s  [75.1025573421999, 75.28271452997893, 75.29076831500747]
+variant 81.3 tok/s  [81.29501476148313, 81.3207280380443, 81.28460743160733]
+speedup 1.080x | greedy tokens identical: 29/512 (first diff at 24)
+Fetching 10 files:   0%|          | 0/10 [00:00<?, ?it/s]Fetching 10 files: 100%|██████████| 10/10 [00:00<00:00, 2430.07it/s]
+verify chunk=4: stock 126.2 tok/s  variant 160.8 tok/s  speedup 1.274x  (248 steps, rounds {'stock': [126.3494790981868, 126.24016124902542, 126.01683112839311], 'variant': [160.84451693774844, 160.67322730140964, 160.78710693378747]})
+verify chunk=16: stock 174.8 tok/s  variant 296.5 tok/s  speedup 1.696x  (62 steps, rounds {'stock': [174.7571656870479, 174.79133238485966, 174.75279798159008], 'variant': [296.45449612131193, 296.3923088139387, 296.45183832362727]})
+done: runs/repro
