@@ -8,7 +8,7 @@ from mlx_lm.models.cache import make_prompt_cache
 from moelab.e2e import patch
 from moelab.mlx_backend import load_variant
 
-VARIANTS = ["moelab/variants/mlx/metal_q4_gemv_v31.py", "moelab/variants/mlx/metal_q4_gemv_v3.py"]
+VARIANTS = ["moelab/variants/mlx/metal_q4_gemv_v31.py", "moelab/variants/mlx/metal_q4_gemv_v3.py", "moelab/variants/mlx/metal_q4_moe.py"]
 
 
 def tiny_model():

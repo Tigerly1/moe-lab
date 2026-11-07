@@ -1,0 +1,9 @@
+commit	score	qwen3	olmoe	dsv2lite	gptoss	mixtral	status	description
+4f775d2	1.1017	1.164	1.069	1.143	1.104	1.034	keep	baseline v31
+75292d5	1.1102	1.172	1.076	1.148	1.120	1.039	discard	down reduces k slots in tg mem (tg=(32,k)), no combine dispatch
+beb93e0	1.1179	1.209	1.076	1.162	1.112	1.038	keep	down: LPR lanes/row (ITERS=3) + k-slot tg reduction, no combine
+beb93e0+	-	1.210	1.083	1.188	1.118	1.038	probe-discard	gate_up LPR lanes/row, ITERS_UP 1-6 (probe only: all within noise of best)
+beb93e0+	-	1.185	1.078	1.154	1.061	1.022	probe-discard	single-dispatch fusion: down TGs spin on per-slot atomic counters (correct, no deadlock) - slower; even with spin removed (incorrect) no faster than 2 kernels
+beb93e0+	-	1.209	1.085	1.163	1.117	1.042	probe-discard	interleaved gate/up rows + packed scale/bias vectors (fewer inputs): no change
+d8d39f3	1.1182	1.213	1.077	1.161	1.111	1.038	discard	gate_up SG_PER_TG 4 -> 8 (noise)
+3f7a52c	1.1181	1.208	1.076	1.165	1.113	1.037	keep	cleanup of beb93e0 (no functional change), re-run confirms score

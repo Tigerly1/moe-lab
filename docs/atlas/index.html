@@ -1,0 +1,253 @@
+<meta charset="utf-8">
+<title>MoE Kernel Atlas</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Literata:opsz,wght@7..72,400;7..72,600&family=JetBrains+Mono:wght@400;600&family=Kalam:wght@400;700&display=swap">
+<style>
+/* Layout: one lab-notebook column (68ch prose), wide figures may break out to 980px; handwritten callouts in the margin of each figure. */
+:root{
+  --paper:#fbfbf8; --ink:#16202c; --muted:#5b6673; --grid:#e4e7ea; --rule:#cfd5db;
+  --accent:#1f5fbf; --warm:#c8641c; --good:#1f8a5b; --bad:#c23b3b; --card:#ffffff;
+  --display:"Bricolage Grotesque",ui-sans-serif,system-ui,sans-serif;
+  --body:"Literata",Georgia,serif;
+  --mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
+  --hand:"Kalam","Comic Sans MS",cursive;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --paper:#11161c; --ink:#e6e9ec; --muted:#9aa5b1; --grid:#222a33; --rule:#2e3842;
+  --accent:#6aa3f5; --warm:#f0a35e; --good:#4fc28f; --bad:#ef7a7a; --card:#161d25; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --paper:#11161c; --ink:#e6e9ec; --muted:#9aa5b1; --grid:#222a33; --rule:#2e3842;
+  --accent:#6aa3f5; --warm:#f0a35e; --good:#4fc28f; --bad:#ef7a7a; --card:#161d25; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--paper);color:var(--ink);font:17px/1.65 var(--body);
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:32px 80px;
+  background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);background-size:28px 28px}
+main{max-width:980px;margin:0 auto;display:flex;flex-direction:column;gap:44px}
+.prose{max-width:68ch}
+header{display:flex;flex-direction:column;gap:10px;max-width:72ch}
+.eyebrow{font:600 12px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--accent)}
+h1{font:700 clamp(34px,6vw,58px)/1.02 var(--display);margin:0;text-wrap:balance;letter-spacing:-.01em}
+h2{font:700 28px/1.15 var(--display);margin:0 0 6px;text-wrap:balance}
+h3{font:600 18px/1.3 var(--display);margin:0}
+p{margin:0}
+section{display:flex;flex-direction:column;gap:14px}
+.lede{font-size:19px;color:var(--muted)}
+.hand{font-family:var(--hand);color:var(--warm);font-size:19px;line-height:1.3}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px}
+.kpi{background:var(--card);border:1px solid var(--rule);border-radius:10px;padding:14px 16px;display:flex;flex-direction:column;gap:4px;min-width:0}
+.kpi b{font:700 34px/1.05 var(--display);font-variant-numeric:tabular-nums}
+.kpi span{font-size:14px;color:var(--muted)}
+.fig{background:var(--card);border:1px solid var(--rule);border-radius:12px;padding:18px;display:grid;grid-template-columns:minmax(0,1fr) 220px;gap:18px;align-items:start}
+.fig .plot{position:relative;height:300px;min-width:0}
+.fig aside{display:flex;flex-direction:column;gap:10px;border-left:2px dashed var(--rule);padding-left:14px}
+.fig figcaption{grid-column:1/-1;font-size:14px;color:var(--muted)}
+@media (max-width:720px){.fig{grid-template-columns:minmax(0,1fr)}.fig aside{border-left:0;border-top:2px dashed var(--rule);padding:12px 0 0}}
+.tbl{overflow-x:auto;background:var(--card);border:1px solid var(--rule);border-radius:12px}
+table{border-collapse:collapse;width:100%;font:14px/1.4 var(--mono);font-variant-numeric:tabular-nums}
+th,td{padding:8px 12px;text-align:right;border-bottom:1px solid var(--rule);white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+th{font-weight:600;color:var(--muted)}
+tr.win td{color:var(--good);font-weight:600}
+tr.lose td{color:var(--bad)}
+code{font:14px var(--mono);background:color-mix(in srgb,var(--accent) 10%,transparent);padding:1px 5px;border-radius:4px}
+.flow{overflow-x:auto}
+.flow svg{min-width:720px;width:100%;height:auto}
+ul.q{display:flex;flex-direction:column;gap:10px;padding-left:20px;margin:0}
+.verdict{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}
+.v{border:1px solid var(--rule);border-radius:10px;padding:14px;background:var(--card);display:flex;flex-direction:column;gap:6px}
+.pill{font:600 11px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;padding:5px 8px;border-radius:99px;align-self:flex-start}
+.pill.ok{background:color-mix(in srgb,var(--good) 18%,transparent);color:var(--good)}
+.pill.open{background:color-mix(in srgb,var(--warm) 18%,transparent);color:var(--warm)}
+.pill.fix{background:color-mix(in srgb,var(--bad) 16%,transparent);color:var(--bad)}
+a{color:var(--accent)}
+@media (prefers-reduced-motion:no-preference){.kpi{transition:transform .2s}.kpi:hover{transform:translateY(-2px)}}
+</style>
+
+<main>
+<header>
+  <div class="eyebrow">Lab notebook · Apple M4 Pro · 2026-11-07</div>
+  <h1>MoE Kernel Atlas</h1>
+  <p class="lede">What we learned optimizing the Mixture-of-Experts layer of Qwen3-30B-A3B for LLM decoding on an Apple GPU: what was measured, what was refuted, and what is still open.</p>
+  <p class="hand">→ every number here comes from a measurement with a correctness gate. The one we got wrong (1.25×) has been corrected.</p>
+</header>
+
+<div class="kpis">
+  <div class="kpi"><b>+7.0%</b><span>end-to-end decode tok/s, Qwen3-30B-A3B-4bit, AC power (89.9 → 96.1)</span></div>
+  <div class="kpi"><b>1.17×</b><span>MoE layer at T=1 vs the real mlx-lm path, 95% CI 1.16–1.18</span></div>
+  <div class="kpi"><b>2.36×</b><span>layer at T=32 consecutive tokens (real routing), MMA kernel</span></div>
+  <div class="kpi"><b>+21.6%</b><span>speculative decoding (6 draft tokens): 63.5 → 77.2 tok/s</span></div>
+</div>
+
+<section>
+  <h2>1. One token, one layer</h2>
+  <p class="prose">The router picks 8 of 128 experts. Each one is three int4 matrices of 2048×768, 2.65 MB together. Per token per layer that is 21 MB read from memory against well under 0.1 MB of activations, so decode is a pure memory problem. Stock mlx-lm spends 6 GPU dispatches on the expert part; our kernel spends 3.</p>
+  <div class="tbl flow"><svg viewBox="0 0 900 230" role="img" aria-label="Dataflow of one MoE layer at decode">
+    <defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M1 1L9 5L1 9" fill="none" stroke="currentColor" stroke-width="1.6"/></marker></defs>
+    <g font-family="JetBrains Mono,monospace" font-size="13" fill="currentColor" style="color:var(--ink)">
+      <rect x="20" y="40" width="120" height="60" rx="8" fill="none" stroke="var(--bad)" stroke-width="1.6"/><text x="80" y="66" text-anchor="middle">token x</text><text x="80" y="86" text-anchor="middle" fill="var(--muted)">1×2048 bf16</text>
+      <line x1="140" y1="70" x2="195" y2="70" stroke="var(--ink)" marker-end="url(#ah)"/>
+      <rect x="200" y="40" width="140" height="60" rx="8" fill="none" stroke="var(--muted)" stroke-width="1.6"/><text x="270" y="66" text-anchor="middle">router</text><text x="270" y="86" text-anchor="middle" fill="var(--muted)">softmax, top-8</text>
+      <line x1="340" y1="70" x2="395" y2="70" stroke="var(--ink)" marker-end="url(#ah)"/>
+      <rect x="408" y="30" width="200" height="60" rx="8" fill="none" stroke="var(--good)" stroke-width="1" opacity=".5"/>
+      <rect x="404" y="35" width="200" height="60" rx="8" fill="none" stroke="var(--good)" stroke-width="1" opacity=".75"/>
+      <rect x="400" y="40" width="200" height="60" rx="8" fill="var(--card)" stroke="var(--good)" stroke-width="1.6"/><text x="500" y="66" text-anchor="middle">8 experts (of 128)</text><text x="500" y="86" text-anchor="middle" fill="var(--muted)">gate·up → SiLU → down</text>
+      <line x1="600" y1="70" x2="655" y2="70" stroke="var(--ink)" marker-end="url(#ah)"/>
+      <rect x="660" y="40" width="120" height="60" rx="8" fill="none" stroke="var(--accent)" stroke-width="1.6"/><text x="720" y="66" text-anchor="middle">combine</text><text x="720" y="86" text-anchor="middle" fill="var(--muted)">Σ w·y</text>
+      <line x1="500" y1="102" x2="500" y2="140" stroke="var(--warm)" stroke-dasharray="4 4"/>
+      <rect x="400" y="142" width="200" height="56" rx="8" fill="none" stroke="var(--warm)" stroke-width="1.6"/><text x="500" y="166" text-anchor="middle">21 MB of int4 weights</text><text x="500" y="186" text-anchor="middle" fill="var(--muted)">floor ≈ 85 µs @ 250 GB/s</text>
+      <text x="630" y="175" font-family="Kalam,cursive" font-size="19" fill="var(--warm)">← this is the whole game</text>
+    </g></svg></div>
+</section>
+
+<section>
+  <h2>2. How close are we to the hardware?</h2>
+  <p class="prose">The datasheet says 273 GB/s. A read-only kernel measured 240–250 GB/s (copy: 224). Measured against that real ceiling, our kernel at T=1 reaches 74% on Qwen3 (small experts) and about 88% on Mixtral (large experts). The gap on small experts is fixed cost per dispatch, which autoresearch round 2 is attacking.</p>
+  <div class="tbl"><table>
+    <thead><tr><th>T=1, bf16, int4 g64</th><th>floor @250 GB/s</th><th>mlx-lm</th><th>ours</th><th>ours / ceiling</th><th>speedup [95% CI]</th></tr></thead>
+    <tbody>
+      <tr><td>Qwen3-30B-A3B (2048×768, E128 k8)</td><td>85 µs</td><td>133 µs</td><td>115 µs</td><td>74%</td><td>1.168 [1.163, 1.175]</td></tr>
+      <tr><td>gpt-oss-20b (2880×2880, E32 k4)</td><td>224 µs</td><td>293 µs</td><td>263 µs</td><td>85%</td><td>1.117 [1.101, 1.145]</td></tr>
+      <tr><td>Mixtral-8x7B (4096×14336, E8 k2)</td><td>793 µs</td><td>924 µs</td><td>898 µs</td><td>88%</td><td>1.029 [1.024, 1.034]</td></tr>
+    </tbody></table></div>
+</section>
+
+<section>
+  <h2>3. Where the T=1 gain comes from</h2>
+  <div class="fig">
+    <div class="plot"><canvas id="cDec" role="img" aria-label="Speedup decomposition at T=1: fusion and slow path parts">Qwen3 +16.8%, gpt-oss +11.7%, Mixtral +2.9%.</canvas></div>
+    <aside><p class="hand">MLX's fast qmv needs K % 512 = 0. Qwen3's down projection has K=768 and gpt-oss has 2880, so both drop to the slow path.</p><p class="hand">Change only that dimension (768→1024) and our gain falls 1.17 → 1.10.</p></aside>
+    <figcaption>Ablation: the same comparison with K aligned to 512. The remainder is fusion (gate+up+SiLU in one kernel) and 6→3 dispatches. Approximate split: the aligned shape is slightly larger.</figcaption>
+  </div>
+</section>
+
+<section>
+  <h2>4. Real routing breaks the uniform assumption</h2>
+  <p class="prose">We recorded the router of Qwen3-30B-A3B on about 5.4k tokens of English technical prose, Python and Polish (48 layers). Consecutive tokens reuse experts heavily. At T=8 (a speculative-decoding verify step) there are 64 slots but only about 28 distinct experts, yet both stock MLX and our first kernel read the weights once per slot.</p>
+  <div class="fig">
+    <div class="plot"><canvas id="cU" role="img" aria-label="Unique experts vs tokens: slots, uniform, different requests, consecutive tokens">At T=8: slots 64, uniform 51.6, batched 42.6, consecutive 28.</canvas></div>
+    <aside><p class="hand">Adjacent tokens share 43–47% of their experts. Random routing would give 6.2%.</p><p class="hand">Top 10% of experts take 42–59% of picks.</p></aside>
+    <figcaption>Unique experts touched by T tokens. Slots = what a per-slot kernel reads. Uniform = E(1−(1−k/E)^T).</figcaption>
+  </div>
+  <div class="fig">
+    <div class="plot"><canvas id="cL" role="img" aria-label="Adjacent-token expert overlap per layer, 48 layers">Layer 0 at 17%, deep layers 40–54%.</canvas></div>
+    <aside><p class="hand">Layer 0 routes almost randomly (17%). From layer ~5 on it is 40–54%.</p><p class="hand">Same pattern reported for Mixtral. Worth a thesis figure.</p></aside>
+    <figcaption>Per layer: fraction of the top-8 experts shared with the previous token.</figcaption>
+  </div>
+</section>
+
+<section>
+  <h2>5. Exploiting reuse: autoresearch, round 1</h2>
+  <p class="prose">A Karpathy-style <code>autoresearch</code> loop ran overnight. The agent may edit one file and is scored by a read-only evaluator (correctness gate plus interleaved A/B against real mlx-lm on real routing traces). Every kept or discarded experiment is a git commit. The winner groups the slots of one step by expert in a map prepass, then runs <code>simdgroup_matrix</code> 8×8 with an exact <code>q | 0x6400</code> int4→half dequant, so each expert's weights are read once per tile of up to 8 tokens.</p>
+  <div class="fig">
+    <div class="plot"><canvas id="cT" role="img" aria-label="Speedup vs T on real routing for v31, tiles scalar, tiles MMA">MMA: 1.16, 1.22, 1.36, 1.64, 1.87, 2.36 at T=1..32.</canvas></div>
+    <aside><p class="hand">Verified independently: 5 process launches × 6 interleaved rounds, bootstrap CIs within ±1–3%.</p><p class="hand">The agent under-sold it. It never measured T=32.</p></aside>
+    <figcaption>Speedup over the real mlx-lm SwitchGLU path, Qwen3 shapes, bf16, real routing traces.</figcaption>
+  </div>
+  <div class="tbl"><table>
+    <thead><tr><th>autoresearch run (round 1)</th><th>score</th><th>T2</th><th>T4</th><th>T8</th><th>T16</th><th>status</th></tr></thead>
+    <tbody>
+      <tr><td>baseline v31</td><td>1.122</td><td>1.188</td><td>1.184</td><td>1.073</td><td>1.012</td><td>keep</td></tr>
+      <tr class="win"><td>expert tiles VT=4 + map prepass</td><td>1.286</td><td>1.201</td><td>1.326</td><td>1.325</td><td>1.406</td><td>keep</td></tr>
+      <tr class="lose"><td>drop single-slot fast path</td><td>1.240</td><td>1.132</td><td>1.329</td><td>1.217</td><td>1.370</td><td>discard</td></tr>
+      <tr><td>tiles stored in expert order</td><td>1.317</td><td>1.195</td><td>1.553</td><td>1.330</td><td>1.378</td><td>discard (noise rule)</td></tr>
+      <tr><td>MMA 8×8 reuse</td><td>1.390</td><td>1.091</td><td>1.258</td><td>1.667</td><td>1.953</td><td>discard (T2 regressed)</td></tr>
+      <tr><td>MMA + 128-k superblocks</td><td>1.411</td><td>1.107</td><td>1.351</td><td>1.589</td><td>2.022</td><td>discard (noise rule)</td></tr>
+      <tr class="win"><td>MMA + superblocks + GEMV for 1-slot tiles</td><td>1.426</td><td>1.203</td><td>1.350</td><td>1.652</td><td>1.875</td><td>promoted after re-verification</td></tr>
+    </tbody></table></div>
+  <p class="hand">Lesson: the keep rule used the baseline's noisy CI and threw away three good kernels. Round 2 uses the candidate's own CI.</p>
+</section>
+
+<section>
+  <h2>6. Does it hold end to end?</h2>
+  <div class="tbl"><table>
+    <thead><tr><th>Qwen3-30B-A3B-4bit, mlx-lm stream_generate</th><th>stock tok/s</th><th>ours tok/s</th><th>gain</th></tr></thead>
+    <tbody>
+      <tr><td>plain decode, battery, 256 tok × 3 rounds</td><td>85.3</td><td>91.3</td><td>+7.1%</td></tr>
+      <tr><td>plain decode, AC, 512 tok × 3 rounds</td><td>89.9</td><td>96.1</td><td>+7.0%</td></tr>
+      <tr><td>speculative, draft Qwen3-0.6B, 3 drafts (accept 0.53)</td><td>57.0</td><td>66.1</td><td>+16.0%</td></tr>
+      <tr><td>speculative, 6 drafts (accept 0.75)</td><td>63.5</td><td>77.2</td><td>+21.6%</td></tr>
+    </tbody></table></div>
+  <p class="prose">Quality: teacher-forced perplexity on about 1000 tokens is 21.098 (stock) vs 21.102 (ours) vs 21.184 (fp32 experts). All three pairs disagree on top-1 about 4% of the time. That is the model's bf16 noise floor. Layer-level error vs fp32 is 2× lower for our kernel (3.5e-3 vs 6.9e-3).</p>
+  <p class="hand">Surprise: on this MoE, speculative decoding is slower than plain decoding, even with our kernel (77 vs 96 tok/s). Each verify step touches 20–30 experts instead of 8.</p>
+</section>
+
+<section>
+  <h2>7. Is it just an M4 boost?</h2>
+  <div class="fig">
+    <div class="plot"><canvas id="cS" role="img" aria-label="Ratio and absolute times over 10 minutes of continuous load">Ratio stays 1.13–1.19, median 1.169 first quarter, 1.167 last quarter.</canvas></div>
+    <aside><p class="hand">10 min of nonstop load, 37,651 interleaved rounds. The ratio did not drift (1.169 → 1.167) and neither did absolute time.</p><p class="hand">Battery vs AC changes absolute speed by 5% but not the gain (+7.1% vs +7.0%).</p></aside>
+    <figcaption>Clock/thermal boost is ruled out on this machine. Whether the gain holds on M1–M3 and M5 is not tested.</figcaption>
+  </div>
+  <div class="verdict">
+    <div class="v"><span class="pill ok">ruled out</span><h3>Clock or thermal boost</h3><p>Interleaved A/B, sustained 10-minute run, battery vs AC. The ratio is invariant.</p></div>
+    <div class="v"><span class="pill open">open</span><h3>Other Apple GPUs</h3><p>The K%512 half of the gain is chip-independent MLX code. The fusion half may depend on M3/M4 Dynamic Caching. M5 has different MLX (NAX) paths. Needs a second Mac.</p></div>
+    <div class="v"><span class="pill fix">corrected</span><h3>Unfair baseline</h3><p>An independent audit found the first baseline was 3 dispatches slower than real mlx-lm, and chained timing ran on zeros. 1.25× became 1.17×.</p></div>
+  </div>
+</section>
+
+<section>
+  <h2>8. Questions worth your eyes</h2>
+  <ul class="q prose">
+    <li>Why does the gain on Mixtral grow with T (1.03× → 1.42× at T=8) when neither kernel shares weights there? Our guess is that MLX switches kernel family between T=1 and T=8. Unverified.</li>
+    <li>Layer 0 routes nearly at random while deeper layers reuse ~50%. Should the kernel choose its strategy per layer?</li>
+    <li>Speculative decoding loses to plain decoding on this MoE. Would an expert-budgeted draft (MoE-Spec style) or MTP heads flip that, now that verify cost is ~1.6× cheaper?</li>
+    <li>The MMA kernel needs d % 128 = 0, so gpt-oss (2880) uses the scalar tile kernel. Is a tail path worth it?</li>
+    <li>Same study on NVIDIA (Triton, Marlin-MoE) is still to run. The harness is ready; it needs a Modal login.</li>
+  </ul>
+</section>
+
+<section>
+  <h2>How this was done</h2>
+  <p class="prose">Karpathy's protocol, adapted: know the data first (real routing traces), dumb baselines plus a roofline, correct before fast, one change at a time with numbered kernel versions (v1 → v31 → tiles), the human writes <code>program.md</code> and the agent edits one file, keep/discard by a fixed metric with git, and an adversarial audit before any claim. Code: <code>~/Desktop/moe-thesis/moe-lab</code>. Details: <code>docs/RESULTS.md</code>.</p>
+</section>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+(function(){
+  const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const C = () => ({ink:css('--ink'),muted:css('--muted'),grid:css('--grid'),accent:css('--accent'),warm:css('--warm'),good:css('--good'),bad:css('--bad')});
+  let charts = [];
+  function base(c, xTitle, yTitle, xLog){
+    return {responsive:true,maintainAspectRatio:false,animation:false,
+      plugins:{legend:{labels:{color:c.muted,boxWidth:12,font:{family:'JetBrains Mono',size:11}}}},
+      scales:{x:{type:xLog?'logarithmic':'linear',title:{display:true,text:xTitle,color:c.muted},ticks:{color:c.muted,callback:xLog?(v=>[1,2,4,8,16,32].includes(v)?v:''):undefined},grid:{color:c.grid}},
+              y:{title:{display:true,text:yTitle,color:c.muted},ticks:{color:c.muted},grid:{color:c.grid}}}};
+  }
+  function draw(){
+    charts.forEach(ch=>ch.destroy()); charts=[];
+    const c = C();
+    const T=[1,2,4,8,16,32], pts=a=>T.map((t,i)=>({x:t,y:a[i]}));
+    charts.push(new Chart(document.getElementById('cU'),{type:'line',data:{datasets:[
+      {label:'slots read (T×8)',data:pts(T.map(t=>8*t)),borderColor:c.bad,borderDash:[6,4],pointRadius:0},
+      {label:'uniform formula',data:pts([8,15.5,29.1,51.6,82.4,111.8]),borderColor:c.muted,borderDash:[2,3],pointRadius:0},
+      {label:'different requests',data:pts([8,14.9,26.2,42.6,62.5,81.9]),borderColor:c.warm,backgroundColor:c.warm},
+      {label:'consecutive tokens',data:pts([8,12.5,18.5,27.9,38.2,50.3]),borderColor:c.accent,backgroundColor:c.accent}]},
+      options:Object.assign(base(c,'tokens per step T','distinct experts (of 128)',true),{parsing:false})}));
+    charts.push(new Chart(document.getElementById('cT'),{type:'line',data:{datasets:[
+      {label:'v31 (per-slot GEMV)',data:pts([1.162,1.188,1.184,1.073,1.012,null]),borderColor:c.muted,backgroundColor:c.muted,borderDash:[4,3]},
+      {label:'tiles, scalar',data:pts([1.155,1.179,1.277,1.314,1.345,1.387]),borderColor:c.warm,backgroundColor:c.warm},
+      {label:'tiles, simdgroup MMA',data:pts([1.160,1.215,1.363,1.642,1.872,2.361]),borderColor:c.accent,backgroundColor:c.accent}]},
+      options:Object.assign(base(c,'tokens per step T','speedup vs mlx-lm (×)',true),{parsing:false})}));
+    const L=[0.172,0.295,0.333,0.379,0.402,0.466,0.459,0.481,0.463,0.503,0.431,0.455,0.456,0.441,0.452,0.494,0.494,0.458,0.456,0.467,0.46,0.483,0.398,0.414,0.432,0.421,0.425,0.477,0.515,0.456,0.505,0.509,0.493,0.49,0.439,0.454,0.465,0.436,0.424,0.466,0.512,0.456,0.48,0.506,0.472,0.543,0.439,0.397];
+    charts.push(new Chart(document.getElementById('cL'),{type:'bar',data:{labels:L.map((_,i)=>i),datasets:[
+      {label:'shared with previous token',data:L.map(v=>v*100),backgroundColor:L.map((v,i)=>i===0?c.bad:c.accent),borderRadius:2},
+      {type:'line',label:'random routing (6.2%)',data:L.map(()=>6.25),borderColor:c.muted,borderDash:[4,4],pointRadius:0}]},
+      options:base(c,'layer','% of top-8 experts reused',false)}));
+    const S=[[0,1.194],[10,1.162],[20,1.161],[30,1.156],[40,1.16],[50,1.164],[60,1.156],[70,1.184],[80,1.173],[90,1.188],[100,1.171],[110,1.156],[120,1.128],[130,1.173],[140,1.166],[150,1.165],[160,1.139],[170,1.177],[180,1.164],[190,1.178],[200,1.158],[210,1.167],[220,1.18],[230,1.168],[240,1.167],[250,1.175],[260,1.159],[270,1.169],[280,1.173],[290,1.165],[300,1.172],[310,1.175],[320,1.161],[330,1.168],[340,1.171],[350,1.167],[360,1.162],[370,1.173],[380,1.172],[390,1.159],[400,1.151],[410,1.166],[420,1.174],[429,1.168],[439,1.155],[449,1.167],[459,1.147],[469,1.153],[479,1.158],[490,1.185],[499,1.162],[510,1.168],[519,1.17],[529,1.156],[539,1.161],[550,1.165],[560,1.174],[570,1.174],[580,1.16],[590,1.176],[600,1.158]];
+    const so=base(c,'seconds of continuous load','speedup (×)',false); so.scales.y.min=1.0; so.scales.y.max=1.3;
+    charts.push(new Chart(document.getElementById('cS'),{type:'line',data:{datasets:[
+      {label:'ratio, sampled rounds',data:S.map(p=>({x:p[0],y:p[1]})),borderColor:c.accent,backgroundColor:c.accent,pointRadius:2,borderWidth:1},
+      {label:'median 1.168',data:[{x:0,y:1.168},{x:600,y:1.168}],borderColor:c.warm,borderDash:[6,4],pointRadius:0}]},
+      options:Object.assign(so,{parsing:false})}));
+    const dc=base(c,'speedup over mlx-lm at T=1 (%)','',false); dc.indexAxis='y'; dc.scales.x.stacked=true; dc.scales.y.stacked=true; dc.scales.x.max=20; dc.scales.y.title.display=false;
+    charts.push(new Chart(document.getElementById('cDec'),{type:'bar',data:{labels:['Qwen3 (K=768)','gpt-oss (K=2880)','Mixtral (aligned)'],datasets:[
+      {label:'fusion + fewer dispatches',data:[9.7,6.0,2.9],backgroundColor:c.accent,barThickness:26},
+      {label:'MLX slow path (K % 512 ≠ 0)',data:[7.1,5.7,0],backgroundColor:c.warm,barThickness:26}]},options:dc}));
+  }
+  const start=()=>{ try{ draw(); }catch(e){} };
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(start); else start();
+  try{ matchMedia('(prefers-color-scheme: dark)').addEventListener('change',start); new MutationObserver(start).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']}); }catch(e){}
+})();
+</script>
