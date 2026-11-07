@@ -408,7 +408,7 @@ The crossover pattern is the same as Qwen3.
 
 - **Locality:** adjacent tokens share 41–50% of experts, against 12.5% for random routing (3.3–4×).
 - **Skew:** the top 10% of experts take 32–42% of selections. Unlike Qwen3, almost no experts go unused (0.1–3.2 of 32).
-- **Generality:** two very different MoEs, Qwen3 (128×8) and gpt-oss (32×4), both show ~40–50% adjacent-token expert overlap. At T=8, a per-slot kernel reads 32 expert slots where ~13 suffice (gpt-oss), or 64 where ~28 suffice (Qwen3). Expert-reuse kernels pay off on both.
+- **Generality (refined later):** Qwen3 (128×8) and gpt-oss (32×4) both show ~40–50% adjacent-token expert overlap. DeepSeek-V2-Lite shows only 18–29%; see real routing #3. At T=8, a per-slot kernel reads 32 expert slots where ~13 suffice (gpt-oss), or 64 where ~28 suffice (Qwen3). Expert-reuse kernels pay off on both.
 - No published per-layer routing statistics for gpt-oss were found (research scan); this is a new measurement.
 
 ### Autoresearch round 6: int4 tiles exact for any affine scale (`autoresearch/program_r6.md`)
@@ -471,6 +471,18 @@ All headline numbers were reproduced from scratch in one run. Output: `runs/repr
 - DeepSeek-V2: 64×6 + 2 shared, MLA.
 
 Plain decode gains +7–9% on all three; verify/batch steps of 16–32 tokens gain +33–84%.
+
+### Real routing #3: DeepSeek-V2-Lite (E=64 routed + 2 shared, top-6) (`runs/routing_dsv2.npz`)
+| T | 1 | 2 | 4 | 8 | 16 | 32 |
+|---|---|---|---|---|---|---|
+| uniform | 6 | 11.4 | 20.8 | 34.9 | 50.8 | 61.3 |
+| different sequences | 6 | 11.4 | 20.4 | 33.5 | 48.2 | 58.8 |
+| consecutive tokens | 6 | 10.4–10.8 | 17.3–18.3 | 27.0–29.5 | 38.5–41.4 | 50.8–52.5 |
+
+- **Weaker locality than the other two models:** adjacent-token overlap is 18–29%, against 9.4% for random routing (2–3×, compared with 4–7× for Qwen3 and 3–4× for gpt-oss). Expert popularity is nearly uniform (entropy 0.95–0.97, top-10% share 22–24%, no unused experts).
+- **Correction of an earlier generalisation:** "~45% locality is a property of trained MoE routers" does not hold. Locality is model-dependent.
+  - Plausible causes: shared experts absorb common tokens, plus DeepSeek's strong load balancing. Both are hypotheses, not tested.
+- **This matches the e2e results:** the DeepSeek verify-step gain (+34% at 16 tokens) is the smallest of the three models (Qwen3 +48%, gpt-oss +70%). The expert-reuse benefit scales with locality, as the model in chapter 4 predicts (traffic ∝ U(T)).
 
 ## Open problems / next steps
 1. ~~Small-batch + skewed routing~~ → solved by `metal_q4_tiles_mma` (round 1). Remaining: gpt-oss (d % 128 ≠ 0) tail path, T=2 with uniform routing (round 3 running).

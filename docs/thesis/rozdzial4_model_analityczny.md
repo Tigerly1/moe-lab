@@ -88,6 +88,13 @@ Na H100 granica ta leży o rząd wielkości wyżej. Ta sama architektura warstwy
 
 Sąsiednie tokeny dzielą 41–50% ekspertów. Przy losowym routingu byłoby to 12,5%. Wzorzec jest więc ten sam co w Qwen3, choć architektury są bardzo różne.
 
+**Trzeci model: DeepSeek-V2-Lite (64 ekspertów routowanych i 2 współdzielonych, k = 6).** Lokalność jest tu wyraźnie słabsza:
+- sąsiednie tokeny dzielą 18–29% ekspertów, przy 9,4% dla routingu losowego;
+- U(8) wynosi 27–30, wobec 34,9 w modelu jednostajnym;
+- popularność ekspertów jest niemal równomierna.
+
+Lokalność routingu zależy więc od modelu. Zysk z ponownego użycia wag jest proporcjonalnie mniejszy, co potwierdzają pomiary end-to-end (§6.4c).
+
 **Wniosek 2.** Kernel czytający wagi osobno dla każdej pary (token, slot) przenosi `T·k / U(T)` razy więcej danych niż potrzeba. Dla T = 8 kolejnych tokenów to około 2,3×, a dla T = 16 około 3,4×. Tak wygląda faza weryfikacji w dekodowaniu spekulatywnym. W tym reżimie szybki kernel MoE musi grupować sloty według eksperta, a nie zwiększać przepustowość pojedynczego GEMV.
 
 ## 4.5. Weryfikacja modelu (do uzupełnienia)

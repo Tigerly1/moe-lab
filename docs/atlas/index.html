@@ -130,7 +130,7 @@ a{color:var(--accent)}
     <aside><p class="hand">Adjacent tokens share 43–47% of their experts. Random routing would give 6.2%.</p><p class="hand">Top 10% of experts take 42–59% of picks.</p></aside>
     <figcaption>Unique experts touched by T tokens. Slots = what a per-slot kernel reads. Uniform = E(1−(1−k/E)^T).</figcaption>
   </div>
-  <p class="prose">A second, very different MoE shows the same thing. In gpt-oss-20b (32 experts, top-4), adjacent tokens share 41–50% of their experts against 12.5% at random, and 8 consecutive tokens touch about 13 experts for 32 slots. Locality around 45% looks like a property of trained MoE routers, not of one model.</p>
+  <p class="prose">A second, very different MoE shows the same thing. In gpt-oss-20b (32 experts, top-4), adjacent tokens share 41–50% of their experts against 12.5% at random, and 8 consecutive tokens touch about 13 experts for 32 slots. A third model draws the limits of that pattern. DeepSeek-V2-Lite (64 experts plus 2 shared, top-6) shares only 18–29% (2–3× random), with nearly uniform expert popularity, and 8 tokens touch 27–30 of 64 experts against 35 at random. Its verify-step gain is correspondingly smaller (+34% at 16 tokens vs +48% for Qwen3 and +70% for gpt-oss). Locality is model-dependent; shared experts and strong load balancing plausibly reduce it.</p>
   <div class="fig">
     <div class="plot"><canvas id="cL" role="img" aria-label="Adjacent-token expert overlap per layer, 48 layers">Layer 0 at 17%, deep layers 40–54%.</canvas></div>
     <aside><p class="hand">Layer 0 routes almost randomly (17%). From layer ~5 on it is 40–54%.</p><p class="hand">Same pattern reported for Mixtral. Worth a thesis figure.</p></aside>
