@@ -9,15 +9,23 @@ python3 -m venv .venv && .venv/bin/pip install mlx mlx-lm numpy fastapi "uvicorn
 .venv/bin/uvicorn server.app:app --port 8765  # open http://localhost:8765
 ```
 
-## Headline result (M4 Pro, 2026-11-07, audit-corrected)
-- **Layer level:** the fused int4 Metal kernel `metal_q4_gemv_v31` beats the **real mlx-lm MoE path** at decode (T=1, bf16):
-  - **1.17×** [95% CI 1.16–1.18] on Qwen3-30B-A3B experts
-  - 1.12× on gpt-oss-20b
-  - 1.03× on Mixtral
-- **Why:** about half the gain comes from MLX's qmv fast path requiring K % 512 == 0, which Qwen3 (K=768) and gpt-oss (K=2880) miss; the other half from fusion and fewer dispatches.
-- **End to end:** Qwen3-30B-A3B-4bit decode goes from 85.3 to **91.3 tok/s (+7.1%)** in mlx-lm, with perplexity unchanged.
-- **Real routing:** T consecutive tokens touch about half the experts the uniform formula predicts. This is the next target (`autoresearch/`).
-- An earlier 1.25× claim was inflated by an unfair baseline; it was found by an independent audit and corrected. Details: [docs/RESULTS.md](docs/RESULTS.md).
+## Headline result (M4 Pro, 2026-11-07, audit-corrected, AC power)
+Production kernel: `moelab/variants/mlx/metal_q4_moe.py`, a dispatcher over `metal_q4_decode_v4` (T=1) and `metal_q4_tiles_mma` / `metal_q4_tiles_b` (T>1).
+
+- **Plain decode, Qwen3-30B-A3B-4bit, mlx-lm:** 91.5 → **99.9 tok/s (+9.2%)**, with perplexity unchanged.
+- **Speculative-verify / small-batch step** (full model, fixed text, chunk of 4 / 7 / 16 tokens): **+19% / +31% / +40%**.
+- **MoE layer at T=1 vs real mlx-lm:**
+  - **1.24×** on Qwen3, 1.10–1.12× on gpt-oss, 1.04× on Mixtral (slope timing).
+  - Our kernel reads memory at **95–100% of the measured ~255 GB/s** hardware limit; MLX reaches 79% on Qwen3.
+- **MoE layer at T>1, real routing traces:** 1.64× at T=8, 1.87× at T=16, 2.36× at T=32. Consecutive tokens share ~45% of experts, and the kernel reads each expert once per tile.
+- **Mechanism at T=1:**
+  - About half the gain is MLX's qmv fast path requiring K % 512 == 0, which Qwen3 (K=768) and gpt-oss (2880) miss.
+  - The rest is fusion and full lane use.
+- **Not a clock boost:** 10-minute sustained runs and battery vs AC leave the ratio unchanged. Other Apple chips are untested.
+- **Corrections:**
+  - An earlier 1.25× claim was inflated by an unfair baseline; an independent audit caught it.
+  - Free-running speculative tok/s is confounded by draft acceptance, so we use the verify benchmark instead.
+  - Details: [docs/RESULTS.md](docs/RESULTS.md). Visual summary: `docs/atlas/index.html`.
 
 ```bash
 .venv/bin/python -m moelab.e2e --tokens 256 --rounds 3   # tok/s, stock vs variant
@@ -82,6 +90,8 @@ moelab/worker.py         isolated job runner (fresh process per run, NDJSON outp
 moelab/remote_modal.py   remote GPU runner
 moelab/e2e.py            end-to-end mlx-lm decode benchmark + quality check
 moelab/compare.py        rigorous interleaved A/B with bootstrap CI
+moelab/slope.py          per-call time as slope over chain length (removes fixed eval cost)
+moelab/sustained.py      thermal/clock robustness (long nonstop A/B)
 moelab/routing_trace.py  record real router top-k; routing_stats.py analyses U(T), skew, locality
 autoresearch/            Karpathy-style agent loop: program.md (human), bench.py (read-only), ar_expert.py (agent)
 moelab/variants/mlx/     baselines (dense_masked, gather_mm, gather_qmm_q4) + custom Metal

@@ -120,8 +120,87 @@ So about half of the gain is MLX's alignment cliff, and about half is fusion and
 - **Implication:** at T=8 consecutive tokens (speculative-decoding verify), kernels read 64 expert slots when 28 would suffice, a ~2.3× traffic waste. That is the target of `autoresearch/`.
 - With trace routing, v31 vs mlx-lm is 1.19× at T=2–4, 1.06× at T=8 and 1.01× at T=16 (`runs/cmp_v31_qwen3_trace.json`). Neither exploits reuse yet.
 
+## Night of 2026-11-07: autoresearch, slope timing, end-to-end (all on AC power)
+
+### Autoresearch round 1: expert reuse at T>1 (`autoresearch/program.md`)
+- **Setup:** a Karpathy-style agent loop. The agent edits one file; the evaluator is read-only (correctness gate plus interleaved A/B against real mlx-lm on real routing traces); each experiment is a git commit that is kept or discarded.
+- **Agent's results:** 7 runs. Best kept score 1.286 (`metal_q4_tiles_b`). Top score 1.426 (`metal_q4_tiles_mma`), discarded only by a keep rule that used the noisy baseline CI (lesson: use the candidate's own CI).
+- **Independent re-verification** (5 launches × 6 rounds, Qwen3 shape, bf16, `runs/cmp_metal_q4_tiles_*_qwen3_*.json`):
+
+| T | 1 | 2 | 4 | 8 | 16 | 32 |
+|---|---|---|---|---|---|---|
+| tiles_mma, real traces | 1.160 | 1.215 | 1.363 | **1.642** | **1.872** | **2.361** |
+| tiles_mma, uniform | 1.159 | 1.137 | 1.122 | 1.152 | 1.224 | 1.435 |
+| tiles_b, real traces | 1.155 | 1.179 | 1.277 | 1.314 | 1.345 | 1.387 |
+
+All 95% CIs are within ±1–3%. Correctness holds on 5 real shapes × {uniform, one_hot, zipf, trace} × T ∈ {1..64}, with worst rel-err 3.6e-3. `tiles_mma` requires d, f % 128 == 0; it refuses gpt-oss (2880) with an assert and never computes wrong.
+
+**How tiles_mma works:**
+1. A map prepass groups the (token, slot) pairs of one step by expert, in tiles of ≤8.
+2. `simdgroup_matrix` 8×8 (half inputs, fp32 accumulation) dequantizes int4 exactly via `as_type<half2>(q | 0x6400) - 1024`.
+3. 128-wide K superblocks give one uint4 weight load per lane.
+4. Single-slot tiles fall back to the GEMV path.
+
+### Autoresearch round 2: plain decode T=1 (`autoresearch/program_decode.md`)
+- **Result:** +1.5% score, giving `metal_q4_decode_v4`. The down kernel spreads each row over LPR lanes with `simd_shuffle_xor`, so all 32 lanes are busy at K=768; the k slots are reduced in threadgroup memory, so the combine dispatch is gone.
+- **Key finding:** the T=1 kernels are at the bandwidth ceiling (next section). A full single-dispatch fusion (atomic counters) was correct but slower.
+
+### Slope timing (`moelab/slope.py`): the fixed eval cost was hiding in chained timing
+- **Method:** per-call time = slope of total eval time vs chain length (10/20/40/80). The intercept is the fixed per-eval cost (130–340 µs), which plain chained timing had spread across the chain.
+- **Measured read-only peak:** 240–250 GB/s (copy: 224 GB/s). Datasheet: 273 GB/s.
+
+| T=1, bf16 | floor @250 GB/s | mlx-lm | v31 | v4 | speedup v4 |
+|---|---|---|---|---|---|
+| Qwen3-30B-A3B | 85.1 µs | 107.4 µs (79%) | 89.1 µs (96%) | 86.4 µs (98.5%) | **1.244×** |
+| gpt-oss-20b | 224.2 µs | 248.9 µs (90%) | 221.5 µs (101%) | 225.8 µs (99%) | 1.10–1.12× |
+| Mixtral-8x7B | 793.2 µs | 801.8 µs (99%) | 773.4 µs (103%) | 771.1 µs (103%) | 1.04× |
+
+- Values above 100% mean the true read ceiling is about 255–260 GB/s.
+- **Conclusion:** at T=1 our kernels read memory at the hardware limit. Further T=1 gains can only come from moving fewer bytes, e.g. lower-bit formats.
+- Chained-timing ratios slightly *understated* the gains: 1.17× there vs 1.24× by slope for Qwen3.
+
+### "Is it just an M4 boost?" (thermal/clock check)
+- **Battery vs AC:** stock moves 85.3 → 89.9 tok/s, but the gain stays the same (+7.1% vs +7.0%).
+- **Sustained load** (`moelab/sustained.py`): 10 minutes nonstop, 37,651 interleaved rounds, T=1. The ratio is 1.169 in the first quarter and 1.167 in the last; absolute times did not drift either (133 µs → 133 µs), so there was no throttling.
+- **Verdict:** clock or thermal boost is ruled out on this machine. Whether the gain holds on other Apple GPUs (M1–M3, M5) is **untested**.
+  - The K%512 half of the gain is chip-independent MLX code.
+  - The fusion half may depend on M3/M4 Dynamic Caching.
+  - M5 uses different MLX (NAX) paths.
+
+### End-to-end with the dispatcher `metal_q4_moe` (v4 at T=1, tiles_mma/tiles_b at T>1)
+Model: mlx-lm `Qwen3-30B-A3B-4bit`, AC power, 3 interleaved rounds.
+
+| mode | stock | ours | gain |
+|---|---|---|---|
+| plain decode, 512 tokens | 91.5 tok/s | **99.9 tok/s** | **+9.2%** |
+| verify step, chunk 2 (fixed text) | 102.6 | 110.2 | +7.4% |
+| verify step, chunk 4 (= 3 drafts) | 124.4 | 148.6 | **+19.4%** |
+| verify step, chunk 7 (= 6 drafts) | 128.4 | 167.6 | **+30.5%** |
+| verify step, chunk 16 | 193.8 | 271.8 | **+40.3%** |
+| speculative decode, 6 drafts (outputs identical 512/512) | 76.5 | 92.3 | +20.8% |
+
+**Pitfall: free-running speculative tok/s is not a fair kernel metric.**
+- With 3 drafts, the stock and kernel outputs diverged at token 22 (bf16 noise).
+- The draft acceptance rate then differed (0.63 vs 0.54), so the kernel arm *looked* 6% slower while doing more verify steps.
+- The verify benchmark (`e2e.py --verify-chunks`) feeds identical text in chunks and removes this confound. Use it for claims.
+
+**Speculative decoding vs plain decoding:**
+- On this MoE, speculative decoding with Qwen3-0.6B is **slower** than plain decoding for stock MLX (72–77 vs 91.5 tok/s).
+- With our kernel it is roughly break-even (92.3 vs 99.9).
+- Each verify step touches 20–30 experts instead of 8.
+
+**Quality:**
+- Teacher-forced over ~1000 tokens: PPL 21.17 (stock) vs 21.15 (ours) vs 21.02 (fp32 experts).
+- All three pairs agree on the top-1 token 95.8–96.2% of the time, which is the bf16 noise floor.
+- The corpus is now frozen at `moelab/data/quality_corpus.txt`.
+
+### Real routing per layer (`runs/routing_qwen3_perlayer.json`)
+- Adjacent-token expert overlap is 17% at layer 0 (random routing gives 6.2%) and 40–54% from about layer 5 on.
+- U(8 consecutive tokens) is 40.6 at layer 0 and 25–29 elsewhere.
+- This matches the Mixtral literature: the first layer routes almost randomly.
+
 ## Open problems / next steps
-1. **Small-batch + skewed routing (1 < T < 64):** expert-centric reuse via threadgroup-staged activations (v4 is correct, but not fast yet).
+1. ~~Small-batch + skewed routing~~ → solved by `metal_q4_tiles_mma` (round 1). Remaining: gpt-oss (d % 128 ≠ 0) tail path, T=2 with uniform routing (round 3 running).
 2. **Regime dispatcher:** v31 for T ≤ 16, sorted `gather_qmm` above. The crossover sits around T≈16–32 on Qwen3 (RQ1).
 3. **Statistics:** ≥5 process launches, bootstrap CI, AC power, `powermetrics` log.
 4. **Same study on NVIDIA:** Marlin-MoE vs vLLM `fused_moe` on L4/H100 via Modal.
