@@ -1,0 +1,3 @@
+dd647f2 expert-reuse tiles VT=4 via map prepass, n==1 uses v31 path, T==1 v31
+67a81d2 bench: 3 launches x 6 rounds
+a3a7394 moe-lab: harness, lab, kernels v1-v31, e2e, real routing traces, audit fixes

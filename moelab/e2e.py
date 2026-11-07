@@ -8,6 +8,7 @@ The variant is used for decode-sized calls (<= MAX_T tokens); prefill keeps the 
 Rounds alternate stock/variant to spread thermal drift. Greedy outputs are compared.
 """
 import argparse
+import json
 import time
 
 import mlx.core as mx
@@ -51,11 +52,14 @@ def patch(model, mod):
     return cls, len(blocks)
 
 
-def decode(model, tok, n):
-    out, tps = [], None
-    for r in stream_generate(model, tok, PROMPT, max_tokens=n, sampler=make_sampler(temp=0.0)):
+def decode(model, tok, n, draft=None, num_draft=3):
+    out, tps, acc = [], None, 0
+    kw = {"draft_model": draft, "num_draft_tokens": num_draft} if draft is not None else {}
+    for r in stream_generate(model, tok, PROMPT, max_tokens=n, sampler=make_sampler(temp=0.0), **kw):
         out.append(r.token)
         tps = r.generation_tps
+        acc += bool(getattr(r, "from_draft", False))
+    decode.last_accept = acc / max(1, len(out))
     return out, tps
 
 
@@ -100,8 +104,14 @@ def main():
     ap.add_argument("--tokens", type=int, default=256)
     ap.add_argument("--rounds", type=int, default=3)
     ap.add_argument("--quality", action="store_true", help="teacher-forced PPL comparison only")
+    ap.add_argument("--draft", default=None, help="draft model for speculative decoding (verify T = num_draft+1)")
+    ap.add_argument("--num-draft", type=int, default=3)
+    ap.add_argument("--max-t", type=int, default=MAX_T, help="use the variant for calls with <= this many tokens")
+    ap.add_argument("--out", default=None)
     a = ap.parse_args()
+    globals()["MAX_T"] = a.max_t
     model, tok = load(a.model)
+    draft = load(a.draft)[0] if a.draft else None
     cls, n = patch(model, load_variant(a.variant))
     print(f"patched {n} MoE blocks with {a.variant}")
     if a.quality:
@@ -111,11 +121,12 @@ def main():
     for r in range(a.rounds + 1):  # round 0 = warmup
         for name in (("stock", "variant") if r % 2 == 0 else ("variant", "stock")):
             cls._use_variant = name == "variant"
-            o, tps = decode(model, tok, a.tokens)
+            o, tps = decode(model, tok, a.tokens, draft, a.num_draft)
             if r > 0:
                 res[name].append(tps)
                 outs[name] = o
-                print(f"round {r} {name:8s} {tps:6.1f} tok/s")
+                print(f"round {r} {name:8s} {tps:6.1f} tok/s  len={len(o)}"
+                      + (f"  draft-accept={decode.last_accept:.2f}" if draft is not None else ""), flush=True)
             time.sleep(2)
     s, v = np.median(res["stock"]), np.median(res["variant"])
     same = sum(x == y for x, y in zip(outs["stock"], outs["variant"]))
@@ -123,6 +134,9 @@ def main():
     print(f"\nstock   {s:.1f} tok/s  {res['stock']}")
     print(f"variant {v:.1f} tok/s  {res['variant']}")
     print(f"speedup {v / s:.3f}x | greedy tokens identical: {same}/{len(outs['stock'])} (first diff at {first_diff})")
+    if a.out:
+        json.dump({"args": vars(a), "stock": res["stock"], "variant": res["variant"], "speedup": v / s,
+                   "len_stock": len(outs["stock"]), "len_variant": len(outs["variant"])}, open(a.out, "w"), indent=1)
 
 
 if __name__ == "__main__":
