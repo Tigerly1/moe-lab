@@ -80,7 +80,7 @@ def teacher_forced(model, tok, cls, text, use_variant):
 
 def quality_check(model, tok, cls, variant_path):
     """Stock vs variant vs fp32 truth (same dequantized weights), teacher-forced."""
-    text = open(__file__.replace("moelab/e2e.py", "docs/RESULTS.md")).read()[:3000]
+    text = open(__file__.replace("e2e.py", "data/quality_corpus.txt")).read()[:3000]  # frozen corpus (audit fix)
     truth_mod = load_variant(__file__.replace("e2e.py", "variants/fp32_truth_q4.py"))
     var_mod = load_variant(variant_path)
     runs = {"stock": (False, None)}
@@ -97,6 +97,36 @@ def quality_check(model, tok, cls, variant_path):
         print(f"{a:7s} vs {b:7s}: top-1 agreement {100 * (ta == tb).mean():6.2f}%  mean |dNLL| {np.abs(na - nb).mean():.4f}")
 
 
+def verify_bench(model, tok, cls, chunk, rounds=3):
+    """Acceptance-free model-level comparison: feed the SAME fixed text through the full
+    model in chunks of `chunk` tokens (= a speculative verify step of chunk-1 drafts) and
+    time it. Both arms do identical work, unlike tok/s of free-running speculative decoding."""
+    from mlx_lm.models.cache import make_prompt_cache
+    ids = tok.encode(open(__file__.replace("e2e.py", "data/quality_corpus.txt")).read())[:1024]
+    prompt, rest = ids[:32], ids[32:]
+    chunks = [rest[i:i + chunk] for i in range(0, len(rest) - chunk + 1, chunk)]
+
+    def run_once():
+        cache = make_prompt_cache(model)
+        mx.eval(model(mx.array([prompt]), cache=cache))
+        t0 = time.perf_counter()
+        for c in chunks:
+            mx.eval(model(mx.array([c]), cache=cache))
+        return time.perf_counter() - t0
+
+    res = {"stock": [], "variant": []}
+    for r in range(rounds + 1):
+        for name in (("stock", "variant") if r % 2 == 0 else ("variant", "stock")):
+            cls._use_variant = name == "variant"
+            t = run_once()
+            if r > 0:
+                res[name].append(len(chunks) * chunk / t)
+    s, v = np.median(res["stock"]), np.median(res["variant"])
+    print(f"verify chunk={chunk}: stock {s:.1f} tok/s  variant {v:.1f} tok/s  speedup {v / s:.3f}x  "
+          f"({len(chunks)} steps, rounds {res})", flush=True)
+    return {"chunk": chunk, "stock": res["stock"], "variant": res["variant"], "speedup": v / s}
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", default="mlx-community/Qwen3-30B-A3B-4bit")
@@ -108,6 +138,8 @@ def main():
     ap.add_argument("--num-draft", type=int, default=3)
     ap.add_argument("--max-t", type=int, default=MAX_T, help="use the variant for calls with <= this many tokens")
     ap.add_argument("--out", default=None)
+    ap.add_argument("--verify-chunks", type=int, nargs="*", default=None,
+                    help="acceptance-free verify benchmark with these chunk sizes, e.g. 1 2 4 7 16")
     a = ap.parse_args()
     globals()["MAX_T"] = a.max_t
     model, tok = load(a.model)
@@ -116,6 +148,11 @@ def main():
     print(f"patched {n} MoE blocks with {a.variant}")
     if a.quality:
         return quality_check(model, tok, cls, a.variant)
+    if a.verify_chunks:
+        out = [verify_bench(model, tok, cls, c) for c in a.verify_chunks]
+        if a.out:
+            json.dump(out, open(a.out, "w"), indent=1)
+        return
     res = {"stock": [], "variant": []}
     outs = {}
     for r in range(a.rounds + 1):  # round 0 = warmup
