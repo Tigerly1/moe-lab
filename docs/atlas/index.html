@@ -73,10 +73,10 @@ a{color:var(--accent)}
 </header>
 
 <div class="kpis">
-  <div class="kpi"><b>+9.2%</b><span>end-to-end decode, Qwen3-30B-A3B-4bit, AC: 91.5 → 99.9 tok/s</span></div>
+  <div class="kpi"><b>+9.0%</b><span>end-to-end decode, Qwen3-30B-A3B-4bit, AC: 91.6 → 99.8 tok/s</span></div>
   <div class="kpi"><b>98.5%</b><span>of the measured memory-bandwidth floor at T=1 (mlx-lm: 79%)</span></div>
-  <div class="kpi"><b>+40%</b><span>full-model verify step of 16 tokens, same text both arms (194 → 272 tok/s)</span></div>
-  <div class="kpi"><b>2.36×</b><span>MoE layer at T=32 consecutive tokens (real routing), MMA kernel</span></div>
+  <div class="kpi"><b>+45%</b><span>full-model verify step of 16 tokens, same text both arms (193 → 279 tok/s)</span></div>
+  <div class="kpi"><b>2.44×</b><span>MoE layer at T=32 consecutive tokens (real routing), tiles_v2 kernel</span></div>
 </div>
 
 <section>
@@ -156,7 +156,16 @@ a{color:var(--accent)}
       <tr><td>MMA + 128-k superblocks</td><td>1.411</td><td>1.107</td><td>1.351</td><td>1.589</td><td>2.022</td><td>discard (noise rule)</td></tr>
       <tr class="win"><td>MMA + superblocks + GEMV for 1-slot tiles</td><td>1.426</td><td>1.203</td><td>1.350</td><td>1.652</td><td>1.875</td><td>promoted after re-verification</td></tr>
     </tbody></table></div>
-  <p class="hand">Lesson: the keep rule used the baseline's noisy CI and threw away three good kernels. Round 2 uses the candidate's own CI.</p>
+  <p class="hand">Lesson: the keep rule used the baseline's noisy CI and threw away three good kernels. Rounds 2 and 3 use the candidate's own CI.</p>
+  <p class="prose">Round 2 (T=1) found the GEMV is already at the bandwidth ceiling and gained 1.5% by keeping all 32 lanes busy in the down projection. Round 3 (T&gt;1, scored on three models) added +4%: the same lane trick for single-slot tiles, a scalar path for 2-slot tiles, and a per-shape K split. At T≥8 the tile kernel is now limited by MMA instruction count. Reuse turned a memory-bound problem into a compute-bound one.</p>
+  <div class="tbl"><table>
+    <thead><tr><th>tiles_v2, verified 5×6 (incl. held-out shapes)</th><th>T=2</th><th>T=4</th><th>T=8</th><th>T=16</th><th>T=32</th></tr></thead>
+    <tbody>
+      <tr><td>Qwen3-30B-A3B, real traces</td><td>1.25×</td><td>1.42×</td><td>1.72×</td><td>1.98×</td><td>2.44×</td></tr>
+      <tr><td>Mixtral-8x7B, uniform (held-out)</td><td>1.13×</td><td>1.39×</td><td>1.95×</td><td>–</td><td>–</td></tr>
+      <tr><td>Qwen3-235B-A22B, uniform (held-out)</td><td>1.05×</td><td>1.08×</td><td>1.13×</td><td>1.27×</td><td>–</td></tr>
+      <tr><td>OLMoE-1B-7B, uniform</td><td>1.06×</td><td>1.17×</td><td>1.22×</td><td>1.36×</td><td>–</td></tr>
+    </tbody></table></div>
 </section>
 
 <section>
@@ -164,13 +173,13 @@ a{color:var(--accent)}
   <p class="prose">Production dispatcher <code>metal_q4_moe</code>: the v4 GEMV at T=1, the MMA tile kernel at T&gt;1. The verify benchmark feeds the same fixed text through the full model in chunks, the way a speculative-decoding verify step does, so both arms do identical work.</p>
   <div class="fig">
     <div class="plot"><canvas id="cV" role="img" aria-label="Full-model throughput per verify chunk size, stock vs ours">Chunk 1: 74.5 vs 79.9; 2: 102.6 vs 110.2; 4: 124.4 vs 148.6; 7: 128.4 vs 167.6; 16: 193.8 vs 271.8 tok/s.</canvas></div>
-    <aside><p class="hand">The whole model, attention included: +19% at 4 tokens, +31% at 7, +40% at 16.</p><p class="hand">This is the regime where expert reuse pays.</p></aside>
+    <aside><p class="hand">The whole model, attention included: +23% at 4 tokens, +34% at 7, +45% at 16.</p><p class="hand">This is the regime where expert reuse pays.</p></aside>
     <figcaption>Qwen3-30B-A3B-4bit, mlx-lm, AC power, 3 interleaved rounds per point.</figcaption>
   </div>
   <div class="tbl"><table>
     <thead><tr><th>Qwen3-30B-A3B-4bit, mlx-lm</th><th>stock tok/s</th><th>ours tok/s</th><th>gain</th></tr></thead>
     <tbody>
-      <tr><td>plain decode, AC, 512 tok × 3 rounds (dispatcher)</td><td>91.5</td><td>99.9</td><td>+9.2%</td></tr>
+      <tr><td>plain decode, AC, 512 tok × 3 rounds (dispatcher)</td><td>91.6</td><td>99.8</td><td>+9.0%</td></tr>
       <tr><td>plain decode, battery, 256 tok (v31, earlier)</td><td>85.3</td><td>91.3</td><td>+7.1%</td></tr>
       <tr><td>speculative, 6 drafts, outputs identical 512/512</td><td>76.5</td><td>92.3</td><td>+20.8%</td></tr>
       <tr class="lose"><td>speculative, 3 drafts, outputs diverge at token 22</td><td>71.8</td><td>67.4</td><td>confounded</td></tr>
@@ -197,7 +206,7 @@ a{color:var(--accent)}
 <section>
   <h2>8. Questions worth your eyes</h2>
   <ul class="q prose">
-    <li>Why does the gain on Mixtral grow with T (1.03× → 1.42× at T=8) when neither kernel shares weights there? Our guess is that MLX switches kernel family between T=1 and T=8. Unverified.</li>
+    <li><b>Solved:</b> why did our untiled kernel gain on Mixtral as T grew? With 8 slots on 8 distinct experts, both kernels run at ~260 GB/s. With 8 slots on 2 experts, MLX still takes 3063 µs but ours takes 2243 µs. Our grid runs slots of the same expert concurrently, so their weights come from cache. MLX orders the batch outermost and re-reads. What else does dispatch order decide?</li>
     <li>Layer 0 routes nearly at random while deeper layers reuse ~50%. Should the kernel choose its strategy per layer?</li>
     <li>Speculative decoding loses to plain decoding on this MoE. Would an expert-budgeted draft (MoE-Spec style) or MTP heads flip that, now that verify cost is ~1.6× cheaper?</li>
     <li>The MMA kernel needs d % 128 = 0, so gpt-oss (2880) uses the scalar tile kernel. Is a tail path worth it?</li>
@@ -250,8 +259,8 @@ a{color:var(--accent)}
       {label:'median 1.168',data:[{x:0,y:1.168},{x:600,y:1.168}],borderColor:c.warm,borderDash:[6,4],pointRadius:0}]},
       options:Object.assign(so,{parsing:false})}));
     charts.push(new Chart(document.getElementById('cV'),{type:'bar',data:{labels:['1','2','4','7','16'],datasets:[
-      {label:'stock mlx-lm',data:[74.5,102.6,124.4,128.4,193.8],backgroundColor:c.muted,borderRadius:3},
-      {label:'ours (dispatcher)',data:[79.9,110.2,148.6,167.6,271.8],backgroundColor:c.accent,borderRadius:3}]},
+      {label:'stock mlx-lm',data:[74.5,102.6,127.5,126.9,192.6],backgroundColor:c.muted,borderRadius:3},
+      {label:'ours (dispatcher)',data:[79.8,112.1,156.6,170.0,279.2],backgroundColor:c.accent,borderRadius:3}]},
       options:base(c,'tokens per verify step','tokens/s, full model',false)}));
     const dc=base(c,'speedup over mlx-lm at T=1 (%)','',false); dc.indexAxis='y'; dc.scales.x.stacked=true; dc.scales.y.stacked=true; dc.scales.x.max=20; dc.scales.y.title.display=false;
     charts.push(new Chart(document.getElementById('cDec'),{type:'bar',data:{labels:['Qwen3 (K=768)','gpt-oss (K=2880)','Mixtral (aligned)'],datasets:[
