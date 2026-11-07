@@ -197,11 +197,13 @@ a{color:var(--accent)}
       <tr class="lose"><td>speculative, 3 drafts, outputs diverge at token 22</td><td>71.8</td><td>67.4</td><td>confounded</td></tr>
       <tr class="win"><td>Qwen3, chunk of 32 / 64 / 128 / 256 tokens (short prefill or batch)</td><td>237.5 / 387.0 / 494.6 / 595.8</td><td>441.3 / 528.6 / 593.5 / 644.0</td><td>+86% / +37% / +20% / +8%</td></tr>
       <tr class="win"><td>gpt-oss-20b (MXFP4), plain decode, 512 tok</td><td>75.5</td><td>81.5</td><td>+7.9%</td></tr>
+      <tr class="lose"><td>Qwen3 plain decode vs context length: ~30 / 1k / 4k / 8k tokens</td><td>91.5 / 83.5 / 74.5 / 57.2</td><td>99.8 / 90.3 / 79.9 / 59.6</td><td>+9.0% / +8.1% / +7.2% / +4.3%</td></tr>
       <tr class="win"><td>DeepSeek-V2-Lite (shared experts, MLA), plain decode / verify 16 / chunk 32</td><td>126.9 / 257.4 / 324.8</td><td>135.9 / 343.6 / 531.0</td><td>+7.1% / +34% / +64%</td></tr>
       <tr class="win"><td>gpt-oss-20b, verify step of 4 / 16 tokens</td><td>125.9 / 174.8</td><td>160.4 / 296.4</td><td>+27% / +70%</td></tr>
     </tbody></table></div>
   <p class="hand">Pitfall: once the two arms generate different text, draft acceptance differs (0.63 vs 0.54) and tok/s no longer compares kernels. That is why the verify benchmark exists.</p>
   <p class="prose">Quality: teacher-forced perplexity on a frozen 1000-token corpus is 21.17 (stock), 21.15 (ours) and 21.02 (fp32 experts). All pairs agree on top-1 95.8–96.2% of the time, which is the model's bf16 noise floor. Layer-level error vs fp32 is 2× lower for our kernel (3.5e-3 vs 6.9e-3).</p>
+  <p class="hand">Amdahl: the longer the context, the more time goes to attention, and the smaller the MoE gain (+4.3% at 8k tokens).</p>
   <p class="hand">Surprise: on this MoE, speculative decoding with a 0.6B draft is slower than plain decoding for stock MLX (72–77 vs 91.5 tok/s). With our kernel it is roughly break-even.</p>
 </section>
 

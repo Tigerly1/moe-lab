@@ -30,6 +30,8 @@ Every number below is in `runs/*.json` and documented in `docs/RESULTS.md`. Time
 | 05:40 | Real routing traces for gpt-oss-20b | same ~45% adjacent-token locality as Qwen3 (new measurement) |
 | 05:45 | `moelab.generate` CLI; `scripts/reproduce_headline.sh` run from scratch (seeds 5000+) | all headline numbers reproduced; 327 tests incl. full models |
 | 05:55 | Third real model: DeepSeek-V2-Lite (shared experts, MLA) | plain +7.1% (identical output), verify-16 +34%, chunk-32 +64%, quality equal |
+| 06:00 | DeepSeek routing traces | weaker locality (18–29%); corrects the "~45% everywhere" generalisation; explains its smaller gain |
+| 06:05 | Decode gain vs context length (Qwen3) | +9.0% → +4.3% at 8k tokens (attention share grows) |
 
 ## What to look at first
 1. `docs/atlas/index.html`, also published as a private artifact (link in the chat summary).
