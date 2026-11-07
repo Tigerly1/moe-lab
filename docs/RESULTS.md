@@ -698,6 +698,67 @@ Decode time breakdown (`moelab/breakdown.py`, Qwen3, real KV cache; "no-moe" = M
 | 10 | Guard's running maximum drifts | p90 of recent history per (chip, power) |
 | 11 | Stale comment in `e2e.py`, non-monotone long-context wording | fixed |
 
+## Round 8 (2026-11-07, afternoon): when does it help, checked against the latest mlx-lm
+
+Method:
+- A ranked backlog (`docs/RESEARCH_BACKLOG.md`, expected value = P × impact ÷ cost, with kill criteria).
+- 4 research agents, one narrow question each, web only, with key claims re-checked by me (`docs/related_work_r8.md`).
+- GPU jobs run strictly one at a time.
+
+### Concurrent requests: the main practical win
+`moelab/batch_bench.py` drives mlx-lm's `BatchGenerator` (what `mlx_lm.server` uses for parallel requests) with B different prompts, greedy, no stop tokens, 128 tokens. It reports aggregate tok/s, with interleaved stock/ours rounds.
+
+| B | Qwen3-30B-A3B | gpt-oss-20b | DeepSeek-V2-Lite |
+|---|---|---|---|
+| 1 | 1.16 | 1.09 | 1.12 |
+| 4 | 1.22 | 1.24 | 1.15 |
+| 8 | 1.23 | 1.43 | 1.27 |
+| 16 | 1.33 | 1.55 | 1.27 |
+| 32 | **1.59** (222 → 352 tok/s) | **1.60** (224 → 359) | **1.54** (312 → 481) |
+
+- Setup: kernels + fused router, mlx-lm 0.32.2, guard ok (`runs/r8/latest/*_batch_fused.json`).
+- On mlx-lm 0.31.3, 2 launches each, the ratios agree within ±0.05 (`runs/r8/batch_*_L1/L2.json`).
+- Kernels only (no router): the same at B ≥ 4; the router matters only at B ≤ 2.
+- **Correctness in batch:** one batched decode step against the fp32-expert truth (`runs/r8/batch_truth_check.json`).
+  - At B=32, stock's worst row deviates 0.194 (rel.), ours 0.068; argmax agreement is 93.8% for both.
+  - At B=8, both have 87.5%: nearly tied logits flip under bf16.
+  - The early divergence of greedy streams at B ≥ 8 is therefore model sensitivity, not a kernel bug.
+- **Positioning** (agent C, `docs/related_work_r8.md`):
+  - No published B=1–32 MoE batched sweep exists for MLX/Metal.
+  - Grouping tokens by expert is standard on NVIDIA (vLLM fused_moe; llama.cpp #12612 map0 + mul_mm_id). The contribution is bringing it to MLX with measured serving gains.
+  - The baseline includes MLX's merged gather_qmm improvement (#4572, in 0.32.3+).
+
+### Baseline is current
+Everything above was re-measured on **mlx-lm 0.32.2** (latest; Python 3.14 venv `.venv-latest`) with MLX 0.32.4 (latest), guard ok:
+- single stream: Qwen3 1.090 (kernels) / 1.166 (+router), gpt-oss 1.075 / 1.101, DeepSeek 1.073 / 1.119;
+- patch tests on real models pass on both mlx-lm versions (119 + 648).
+- The MoE path and the router code are unchanged between 0.31.3 and 0.32.2; `generate.py` changed a lot (~1000 lines).
+
+### Hypotheses tested and rejected
+1. **"Decode is CPU-bound, and fewer ops is why we win."** Rejected (`runs/r8/cpu*`).
+   - 4 busy CPU threads change nothing.
+   - 8 busy threads slow both arms and shrink our gain (1.09 → 1.01 kernels, 1.16 → 1.07 fused).
+   - Host graph-build cost per token is 0.32 ms for ours vs 0.49 ms for stock (`runs/r8/host_overhead.json`), so caching it is not worth it (backlog #6 killed).
+2. **"The MoE gain shrinks with context."** Not reproduced.
+   - Two clean launches (`runs/r8/longctx_*_clean*.json`) give a constant MoE-only gain: kernels 1.14–1.17× at 1k and 1.13–1.14× at 16k; fused 1.27× at both.
+   - The e2e gain falls only by Amdahl: fused 1.13× at 1k, 1.07× at 16k.
+   - The round-7 single run (1.04× at 16k) is not reproducible. The guard, which measures bandwidth only, did not flag whatever disturbed it.
+   - Side result: forcing MLX's command-buffer policy changes the picture a lot. One buffer per step: ours 0.93× at 16k. Commit after every op: 1.01–1.03× e2e. So the gain depends on MLX's default commit policy (50 ops / 50 MB on `applegpu_g16s`).
+   - Raising `MLX_MAX_MB_PER_BUFFER` does not speed up stock (the confound raised in mlx-lm #956), so it does not explain our gain.
+3. **"mlx-lm's bf16 router softmax picks wrong experts in 9% of cases."** Withdrawn (see the Round 7 correction).
+   - Stock always picks a valid top-k by logit (0 of 24,576 wrong); the differences are exact bf16 *logit* ties.
+   - The planned upstream issue is dropped (backlog #2 killed).
+
+### Mistakes made in this round (and caught)
+- A router check used the DeepSeek selection form for Qwen3 (superseded).
+- zsh did not split `$VAR` argument strings twice: gpt-oss runs did not start, and a long-context queue ran nothing. Every queue is now a bash script.
+- A `set -e` script stopped after a test failure caused by a renamed class in mlx-lm 0.32 (`gpt_oss.SwiGLU` → `SwigluOAI`). The test was fixed and the runs repeated.
+
+### Still needs the user
+- a second chip (M2 16 GB: `scripts/portability_m2.sh`);
+- `modal setup` for NVIDIA;
+- Xcode (Metal compiler) for an MLX upstream kernel PR.
+
 ## Open problems / next steps
 1. ~~Small-batch + skewed routing~~ → solved by `metal_q4_tiles_mma` (round 1). Remaining: gpt-oss (d % 128 ≠ 0) tail path, T=2 with uniform routing (round 3 running).
 2. **Regime dispatcher:** v31 for T ≤ 16, sorted `gather_qmm` above. The crossover sits around T≈16–32 on Qwen3 (RQ1).

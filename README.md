@@ -9,7 +9,40 @@ python3 -m venv .venv && .venv/bin/pip install mlx mlx-lm numpy fastapi "uvicorn
 .venv/bin/uvicorn server.app:app --port 8765  # open http://localhost:8765
 ```
 
-## Headline result (M4 Pro, 2026-11-07, after two independent audits, AC power)
+## When does it help? (M4 Pro, latest mlx-lm 0.32.2 + MLX 0.32.4, 2026-11-07, every run guard-checked)
+Stock = unmodified mlx-lm. "Ours" = our expert kernels + fused router tail (`python -m moelab.generate`, or `e2e.py --fused-router`).
+
+| situation | Qwen3-30B-A3B | gpt-oss-20b | DeepSeek-V2-Lite | worth it? |
+|---|---|---|---|---|
+| one chat, short context (tok/s) | 90 → **105 (1.17×)** | 74 → 81 (1.10×) | 124 → 138 (1.12×) | modest |
+| one chat, 16k context | 1.07× (MoE part 1.27×; attention dominates) | — | — | small |
+| **4 requests at once** (mlx-lm BatchGenerator, aggregate tok/s) | 136 → 167 (1.22×) | 129 → 160 (1.24×) | 192 → 220 (1.15×) | yes |
+| **8 at once** | 167 → 204 (1.23×) | 138 → 197 (**1.43×**) | 209 → 265 (1.27×) | yes |
+| **16 at once** | 189 → 252 (1.33×) | 167 → 259 (**1.55×**) | 257 → 326 (1.27×) | yes |
+| **32 at once** | 222 → 352 (**1.59×**) | 224 → 359 (**1.60×**) | 312 → 481 (**1.54×**) | **yes, the main win** |
+| verify step of 16 / 32 tokens (speculative decoding, chunked prefill) | 1.47× / 1.79× | 1.71× / 1.54× | 1.33× / 1.63× | yes, if the stack uses it |
+| CPU fully busy (8 threads of other work) | 1.01–1.07× | — | — | no |
+
+- **Where it pays off:** a Mac serving several requests at once. Examples: the `mlx_lm.server` with concurrent users, an agent issuing parallel calls, batch evaluation, synthetic-data generation. Each decode step then sends B tokens from B different sequences through every MoE layer.
+- **Why the gain grows with B:** stock mlx-lm re-reads each expert's weights per (token, slot) until 64 slots, while our kernels group slots by expert and read each expert once per tile. This technique is standard on NVIDIA (vLLM fused_moe, llama.cpp map0 + mul_mm_id); here it is brought to MLX/Metal with measured serving gains (`docs/related_work_r8.md`).
+- **Where it does not help:**
+  - very long context: attention takes over (Amdahl);
+  - a CPU-saturated machine;
+  - many tokens per expert (load T·k/E > 8–24), where the dispatchers fall back to the stock path, bit-identical;
+  - all k experts receiving every token (synthetic only, 0.76×);
+  - experts smaller than any studied model (0.93–0.95×).
+- **Correctness:**
+  - 648 tests;
+  - every path vs an fp32 reference, plus real-model multi-token logits;
+  - in batched decode at B=32, our logits are closer to the fp32-expert truth than stock's (max per-row error 0.07 vs 0.19, `runs/r8/batch_truth_check.json`).
+- **Output differences:** greedy text differs from stock after a few tokens. The cause is bf16 rounding plus a different tie-breaking between experts with exactly equal bf16 gate logits (9% of Qwen3 token-layers; both choices are valid). Perplexity is within 0.9% of stock on all three models.
+- **Sources:**
+  - single-stream and batch: `runs/r8/latest/`, same ratios on mlx-lm 0.31.3 in `runs/r8/batch_*` (2 launches each);
+  - long context: `runs/r8/longctx_*_clean*.json`;
+  - verify steps: `runs/r7/`;
+  - CPU stress: `runs/r8/cpu*`.
+
+## Headline result, night run (M4 Pro, 2026-11-07, after two independent audits, AC power)
 Production kernels:
 - `moelab/variants/mlx/metal_q4_moe.py` (int4 affine g64): v4 GEMV at T=1, expert-tile MMA at T>1;
 - `metal_mxfp4_moe.py` (MXFP4, the gpt-oss format), plus `metal_mxfp4_gptoss.py` (adds biases and the clamped SwiGLU).

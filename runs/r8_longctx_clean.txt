@@ -1,0 +1,17 @@
+== launch 1 kernels
+ctx  1024: stock 14.39 ms  variant 13.42  no-moe 6.57  | MoE stock 7.82 -> 6.85 ms (1.142x), MoE share 54%, e2e 1.072x
+ctx 16384: stock 24.58 ms  variant 23.67  no-moe 16.60  | MoE stock 7.98 -> 7.07 ms (1.129x), MoE share 32%, e2e 1.038x
+guard: probe min 238 GB/s vs p90 242 for Apple M4 Pro|ac (98%) -> ok
+== launch 1 fused
+ctx  1024: stock 14.45 ms  variant 12.78  no-moe 6.68  | MoE stock 7.76 -> 6.10 ms (1.273x), MoE share 54%, e2e 1.130x
+ctx 16384: stock 24.56 ms  variant 22.84  no-moe 16.58  | MoE stock 7.98 -> 6.26 ms (1.275x), MoE share 33%, e2e 1.075x
+guard: probe min 240 GB/s vs p90 242 for Apple M4 Pro|ac (99%) -> ok
+== launch 2 kernels
+ctx  1024: stock 14.59 ms  variant 13.45  no-moe 6.70  | MoE stock 7.90 -> 6.76 ms (1.169x), MoE share 54%, e2e 1.085x
+ctx 16384: stock 24.53 ms  variant 23.58  no-moe 16.63  | MoE stock 7.90 -> 6.95 ms (1.137x), MoE share 32%, e2e 1.040x
+guard: probe min 238 GB/s vs p90 242 for Apple M4 Pro|ac (98%) -> ok
+== launch 2 fused
+ctx  1024: stock 14.47 ms  variant 12.77  no-moe 6.66  | MoE stock 7.81 -> 6.11 ms (1.278x), MoE share 54%, e2e 1.133x
+ctx 16384: stock 24.40 ms  variant 22.75  no-moe 16.57  | MoE stock 7.84 -> 6.19 ms (1.266x), MoE share 32%, e2e 1.072x
+guard: probe min 231 GB/s vs p90 242 for Apple M4 Pro|ac (95%) -> ok
+done
