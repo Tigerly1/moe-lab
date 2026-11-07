@@ -743,6 +743,26 @@ Method:
   - **Also mine:** the server log went to an unread pipe, which can block the server.
   - **mlx-lm 0.32.2:** **one request with an empty prompt kills the server's generation thread for every client**; all later requests get "generation thread died" (`scripts/r8_empty_prompt_bug.sh`, `runs/r8_empty_prompt_bug.txt`). This bug class is already tracked (mlx-lm #1513, #1909), so at most a repro comment is worth adding.
 
+### Versus llama.cpp (Qwen3-30B-A3B, `scripts/r8_llamacpp.sh`)
+- **Setup:**
+  - llama.cpp 0.9.0 (Homebrew build 12110), Metal, all layers on the GPU, default batching;
+  - `unsloth/Qwen3-30B-A3B-GGUF` Q4_0, which is 4.5 bits/weight like MLX 4-bit g64, although the formats differ (block 32 with a scale vs group 64 with scale + bias);
+  - same client, same prompts.
+- **Single stream:** `llama-bench` gives tg256 81.9 ± 0.1 tok/s and pp512 699 tok/s. MLX plain decode is 90 (stock) and 105 (ours).
+- **Server, aggregate tok/s and median latency** (`runs/r8/server_llamacpp_vs_ours_qwen3.json`; stock MLX from `runs/r8/server_Qwen3-30B-A3B-4bit.json`):
+
+| clients | llama.cpp | stock mlx-lm | ours |
+|---|---|---|---|
+| 1 | 75.7 (3.38 s) | 64.4 (3.98 s) | 79.1 (3.24 s) |
+| 8 | **144.1** (14.2 s) | 120.7 (17.0 s) | 141.9 (14.4 s) |
+| 32 | 149.7 (54.6 s) | 156.0 (52.2 s) | **221.9 (36.7 s)** |
+
+- **Reading:** at 8 concurrent requests stock MLX trails llama.cpp by 16%; our kernels close that gap. At 32, llama.cpp's throughput is flat (144 → 150) while ours keeps scaling.
+- **Caveats:**
+  - only default settings were tried for both, with no `-ub`/`-b` or `--decode-concurrency` tuning;
+  - one model;
+  - the quantization formats are not identical.
+
 ### Baseline is current
 Everything above was re-measured on **mlx-lm 0.32.2** (latest; Python 3.14 venv `.venv-latest`) with MLX 0.32.4 (latest), guard ok:
 - single stream: Qwen3 1.090 (kernels) / 1.166 (+router), gpt-oss 1.075 / 1.101, DeepSeek 1.073 / 1.119;

@@ -1,0 +1,10 @@
+== llama-bench single stream (tg256, pp512)
+| model                          |       size |     params | backend    | threads |            test |                  t/s |
+| ------------------------------ | ---------: | ---------: | ---------- | ------: | --------------: | -------------------: |
+| qwen3moe 30B.A3B Q4_0          |  16.18 GiB |    30.53 B | BLAS,MTL   |       8 |           pp512 |       699.13 ± 18.73 |
+| qwen3moe 30B.A3B Q4_0          |  16.18 GiB |    30.53 B | BLAS,MTL   |       8 |           tg256 |         81.93 ± 0.14 |
+== server: llama.cpp (baseline arm) vs moelab.serve
+clients=  1: stock    75.7 tok/s -> ours    79.1 tok/s (1.045x); median latency 3.38s -> 3.24s
+clients=  8: stock   144.1 tok/s -> ours   141.9 tok/s (0.985x); median latency 14.21s -> 14.43s
+clients= 32: stock   149.7 tok/s -> ours   221.9 tok/s (1.482x); median latency 54.57s -> 36.71s
+done

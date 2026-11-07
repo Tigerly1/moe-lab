@@ -18,7 +18,13 @@ import numpy as np
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 
-def start(model, port, stock, conc):
+def start(model, port, stock, conc, gguf=None):
+    if stock and gguf:          # baseline = llama.cpp's llama-server (continuous batching, all layers on GPU)
+        log = open(os.path.join(os.path.dirname(HERE), "runs", "r8", f"server_llamacpp_{port}.log"), "w")
+        p = subprocess.Popen(["llama-server", "-m", gguf, "--port", str(port), "--parallel", str(conc),
+                              "-c", str(conc * 1024), "-ngl", "999"], stdout=log, stderr=log, text=True)
+        p.logpath = log.name
+        return _wait(p, port)
     env = dict(os.environ, MOELAB_STOCK="1" if stock else "")
     # server logs go to a file: an unread PIPE fills up (64 KB) and blocks the server (round-8 bug: timeouts at 32 clients)
     log = open(os.path.join(os.path.dirname(HERE), "runs", "r8", f"server_{'stock' if stock else 'ours'}_{port}.log"), "w")
@@ -26,6 +32,10 @@ def start(model, port, stock, conc):
                           "--decode-concurrency", str(conc), "--prompt-concurrency", str(min(conc, 8))],
                          env=env, stdout=log, stderr=log, text=True, cwd=os.path.dirname(HERE))
     p.logpath = log.name
+    return _wait(p, port)
+
+
+def _wait(p, port):
     for _ in range(600):
         try:
             urllib.request.urlopen(f"http://127.0.0.1:{port}/v1/models", timeout=2).read()
@@ -64,13 +74,14 @@ def main():
     ap.add_argument("--rounds", type=int, default=2)
     ap.add_argument("--port", type=int, default=8091)
     ap.add_argument("--out", default=None)
+    ap.add_argument("--gguf", default=None, help="use llama.cpp llama-server with this GGUF as the baseline arm")
     a = ap.parse_args()
     words = open(os.path.join(HERE, "data/quality_corpus.txt")).read().split()
     conc = max(a.clients)
     rows = {}
     for r in range(a.rounds):
         for stock in ((True, False) if r % 2 == 0 else (False, True)):
-            p = start(a.model, a.port, stock, conc)
+            p = start(a.model, a.port, stock, conc, a.gguf)
             try:
                 burst(a.port, a.model, [" ".join(words[:60])], 16)                      # warmup (JIT, caches)
                 for n in a.clients:

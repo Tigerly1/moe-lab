@@ -21,6 +21,7 @@ Stock = unmodified mlx-lm. "Ours" = our expert kernels + fused router tail (`pyt
 | **16 at once** | 189 → 252 (1.33×) | 167 → 259 (**1.55×**) | 257 → 326 (1.27×) | yes |
 | **32 at once** | 222 → 352 (**1.59×**) | 224 → 359 (**1.60×**) | 312 → 481 (**1.54×**) | **yes, the main win** |
 | **real `mlx_lm.server`, 32 concurrent HTTP clients** (`moelab.serve`, 256 tokens each) | 156 → 215 tok/s (**1.38×**), median reply 52 s → 38 s | 157 → 217 (**1.38×**), 52 s → 37 s | 199 → 262 (**1.32×**), 41 s → 31 s | **yes** |
+| **vs llama.cpp** (`llama-server`, default settings, GGUF Q4_0 = 4.5 bits/weight like MLX 4-bit g64), Qwen3 only | 1 stream: llama.cpp 82 tok/s (llama-bench tg256), ours 105. Server, 8 clients: llama.cpp 144, stock MLX 121, ours 142. **32 clients: llama.cpp 150, ours 222 (1.48×), median reply 54.6 s → 36.7 s** | — | — | stock MLX trails llama.cpp at 8 clients; with our kernels MLX matches it at 8 and leads at 32 |
 | same server, 8 clients | 1.16×, 17.0 s → 14.6 s | 1.35×, 19.3 s → 14.2 s | 1.18×, 14.0 s → 11.9 s | yes |
 | verify step of 16 / 32 tokens (speculative decoding, chunked prefill) | 1.47× / 1.79× | 1.71× / 1.54× | 1.33× / 1.63× | yes, if the stack uses it |
 | CPU fully busy (8 threads of other work) | 1.01–1.07× | — | — | no |
