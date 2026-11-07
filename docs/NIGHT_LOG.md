@@ -31,13 +31,27 @@ Every number below is in `runs/*.json` and documented in `docs/RESULTS.md`. Time
 | 05:45 | `moelab.generate` CLI; `scripts/reproduce_headline.sh` run from scratch (seeds 5000+) | all headline numbers reproduced; 327 tests incl. full models |
 | 05:55 | Third real model: DeepSeek-V2-Lite (shared experts, MLA) | plain +7.1% (identical output), verify-16 +34%, chunk-32 +64%, quality equal |
 | 06:00 | DeepSeek routing traces | weaker locality (18–29%); corrects the "~45% everywhere" generalisation; explains its smaller gain |
-| 06:05 | Decode gain vs context length (Qwen3) | +9.0% → +4.3% at 8k tokens (attention share grows) |
+| 06:05 | Decode gain vs context length (Qwen3) | +8.1% at 1k → +4.3% at 8k tokens (attention share grows) |
+| 06:10 | Lab UI: responsive layout; end-to-end run through the UI verified | – |
+| 06:15 | **Audit 3** (post-audit-2 additions) | found a real fp32-activation bug in round 6 (silent ~10% error at T>1; bf16/fp16 unaffected), stale pre-round-6 numbers in README, unsaved DeepSeek quality → all fixed and re-measured |
+| 06:22 | Final reproduction of all headline numbers on final code (3 models + crossover) | see `runs/repro/` |
 
 ## What to look at first
 1. `docs/atlas/index.html`, also published as a private artifact (link in the chat summary).
 2. `README.md` "Headline result".
 3. `docs/RESULTS.md`: the full record, including every correction.
 4. `docs/thesis/`: drafts of chapters 1–7 (Polish), plus `fig/`.
+
+## Corrections made tonight (all in RESULTS.md)
+- **1.25× → 1.17×:** the first baseline was unfair.
+- **Timing chain:** activations decayed to zeros.
+- **Speculative decoding:** comparisons were confounded by draft acceptance.
+- **MXFP4 scale overflows:** two found on the real checkpoint.
+- **Confidence intervals:** trace-routing CIs were too narrow.
+- **Overstated labels:** "held-out" and bandwidth percentages.
+- **Locality:** "~45% locality everywhere" was wrong (DeepSeek has 18–29%).
+- **Round-6 kernel:** fp32 activations broke.
+- **Stale numbers:** some came from pre-round-6 kernels.
 
 ## Decisions waiting for you
 - Post the MLX issue #4509 comment? (draft: `docs/upstream/mlx_issue_4509_draft.md`)
