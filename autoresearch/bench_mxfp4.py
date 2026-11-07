@@ -2,7 +2,7 @@
 
     .venv/bin/python autoresearch/bench_mxfp4.py > run.log 2>&1; grep "^score:\\|^status:\\|^per_point:\\|^ci:" run.log
 
-gate: unit tests for ar_tiles + bf16 real-shape correctness (qwen3/olmoe/dsv2lite; T 1,2,3,8,16,32; uniform, one_hot, trace).
+gate: unit tests + LARGE E8M0 SCALE regression (real-checkpoint scales) for ar_mxfp4 + bf16 real-shape correctness (qwen3/olmoe/dsv2lite; T 1,2,3,8,16,32; uniform, one_hot, trace).
 speed: interleaved A/B vs real mlx-lm path; 3 launches x 6 rounds per config:
   gpt-oss-20b uniform T 1 2 4 8 | qwen3-30b-a3b trace T 1 4 16
 score = geometric mean of the 7 speedups. ci = mean 95% CI half-width.
@@ -15,7 +15,7 @@ CAND, BASE = "moelab/variants/mlx/ar_mxfp4.py", "moelab/variants/mlx/mlxlm_switc
 CONFIGS = [("gpt-oss-20b", "uniform", [1, 2, 4, 8]), ("qwen3-30b-a3b", "trace", [1, 4, 16])]
 
 def gate():
-    r = subprocess.run([PY, "-m", "pytest", "-q", "-x", "tests/test_mlx_variants.py", "-k", "ar_mxfp4"], cwd=ROOT, capture_output=True, text=True)
+    r = subprocess.run([PY, "-m", "pytest", "-q", "-x", "tests/test_mlx_variants.py", "tests/test_mxfp4_large_scales.py", "-k", "ar_mxfp4"], cwd=ROOT, capture_output=True, text=True)
     if r.returncode:
         print(r.stdout[-3000:]); return "unit tests failed"
     code = f"""
