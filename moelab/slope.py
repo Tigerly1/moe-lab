@@ -43,6 +43,7 @@ def main():
     ap.add_argument("--T", type=int, default=1); ap.add_argument("--routing", default="uniform")
     ap.add_argument("--variants", nargs="+", required=True)
     ap.add_argument("--windows", type=int, default=80, help="distinct inputs; >= max chain so no expert-set repeats (audit 2)")
+    ap.add_argument("--bw", type=float, default=250.0, help="measured read GB/s of this chip (M4 Pro: 250)")
     a = ap.parse_args()
     sh = SHAPES[a.shape]
     w = be.make_weights(sh, a.dtype)
@@ -54,12 +55,12 @@ def main():
     base = None
     for v in a.variants:
         m = be.load_variant(f"moelab/variants/mlx/{v}.py"); st = m.prepare(*w); mx.eval(st)
-        floor = roofline.bytes_moved(a.T, sh.d, sh.f, sh.E, sh.k, getattr(m, "W_BITS", w_bits), unique=U) / 250e9 * 1e6
+        floor = roofline.bytes_moved(a.T, sh.d, sh.f, sh.E, sh.k, getattr(m, "W_BITS", w_bits), unique=U) / (a.bw * 1e9) * 1e6
         s, c = fit(lambda *z: m.run(st, *z), inp)
         net = s - res_us
         base = base or net
         print(f"  {v:22s} per-call {s:7.1f}us  minus residual {net:7.1f}us  fixed/eval {c:6.0f}us  "
-              f"floor {floor:6.1f}us  {100 * floor / net:5.1f}% of floor@250  speedup {base / net:.3f}x")
+              f"floor {floor:6.1f}us  {100 * floor / net:5.1f}% of floor@{a.bw:.0f}  speedup {base / net:.3f}x")
         del st
 
 
