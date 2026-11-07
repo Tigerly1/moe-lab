@@ -27,6 +27,8 @@ def patch(model, mod):
     """Swap expert compute of every Qwen3MoeSparseMoeBlock (or gpt-oss MLPBlock) for `mod.run` at decode."""
     if getattr(model, "model_type", None) == "gpt_oss":
         return _patch_gptoss(model, mod)
+    if getattr(model, "model_type", None) in ("deepseek_v2", "deepseek_v3"):
+        return _patch_deepseek(model, mod)
     blocks = [l.mlp for l in model.layers if hasattr(l.mlp, "switch_mlp")]
     cls = type(blocks[0])
     stock = cls.__dict__.get("_stock_call", cls.__call__)  # idempotent re-patching
@@ -50,6 +52,36 @@ def patch(model, mod):
         y = mod.run(self._variant_state, x.reshape(T, -1), inds.reshape(T, k),
                     scores.reshape(T, k).astype(mx.float32))
         return y.reshape(x.shape)
+
+    cls.__call__ = call
+    return cls, len(blocks)
+
+
+def _patch_deepseek(model, mod):
+    """DeepSeek-V2/V3 MoE block: the stock MoEGate (softmax/sigmoid, group-limited top-k, routed scaling)
+    is called unchanged; only the routed SwitchGLU is replaced; shared experts run stock and are added."""
+    blocks = [l.mlp for l in model.layers if hasattr(l.mlp, "switch_mlp")]   # first layer(s) are dense
+    cls = type(blocks[0])
+    stock = cls.__dict__.get("_stock_call", cls.__call__)
+    cls._stock_call = stock
+    for b in blocks:
+        sw = b.switch_mlp
+        for p in (sw.gate_proj, sw.up_proj, sw.down_proj):
+            assert p.group_size == mod.GS and p.bits == mod.BITS, "format mismatch"
+        b._variant_state = {n: (p.weight, p.scales, p.biases) for n, p in
+                            (("g", sw.gate_proj), ("u", sw.up_proj), ("d", sw.down_proj))}
+
+    def call(self, x):
+        T = x.size // x.shape[-1]
+        if T > MAX_T or not getattr(cls, "_use_variant", False):
+            return stock(self, x)
+        inds, scores = self.gate(x)
+        k = inds.shape[-1]
+        y = mod.run(self._variant_state, x.reshape(T, -1), inds.reshape(T, k),
+                    scores.reshape(T, k).astype(mx.float32)).reshape(x.shape)
+        if getattr(self, "shared_experts", None) is not None:
+            y = y + self.shared_experts(x)
+        return y
 
     cls.__call__ = call
     return cls, len(blocks)
