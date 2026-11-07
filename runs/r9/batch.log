@@ -1,0 +1,20 @@
+== gemma-4-26b-a4b-it-4bit launch 1
+B=  1: stock    77.6 tok/s  variant    85.9 tok/s  speedup 1.106x  (stock 77.5-77.7, variant 85.9-85.9) identical-prefix median 0/128
+B=  8: stock   152.8 tok/s  variant   174.2 tok/s  speedup 1.139x  (stock 152.8-153.0, variant 174.2-174.3) identical-prefix median 19/128
+B= 32: stock   229.5 tok/s  variant   287.2 tok/s  speedup 1.251x  (stock 229.3-231.5, variant 287.1-287.2) identical-prefix median 17/128
+guard: probe min 240 GB/s vs p90 237 for Apple M4 Pro|battery (101%) -> ok
+== gemma-4-26b-a4b-it-4bit launch 2
+B=  1: stock    79.0 tok/s  variant    87.7 tok/s  speedup 1.109x  (stock 78.5-79.1, variant 87.7-87.7) identical-prefix median 0/128
+B=  8: stock   154.7 tok/s  variant   176.4 tok/s  speedup 1.140x  (stock 154.7-154.8, variant 176.3-176.4) identical-prefix median 19/128
+B= 32: stock   232.1 tok/s  variant   291.2 tok/s  speedup 1.254x  (stock 232.0-232.3, variant 291.0-291.3) identical-prefix median 17/128
+guard: probe min 238 GB/s vs p90 240 for Apple M4 Pro|battery (99%) -> ok
+== Qwen3.6-35B-A3B-4bit launch 1
+B=  1: stock    91.0 tok/s  variant   100.6 tok/s  speedup 1.105x  (stock 90.7-91.1, variant 100.5-100.7) identical-prefix median 52/128
+B=  8: stock   193.3 tok/s  variant   211.6 tok/s  speedup 1.095x  (stock 193.2-193.3, variant 211.4-211.6) identical-prefix median 56/128
+B= 32: stock   289.0 tok/s  variant   358.3 tok/s  speedup 1.240x  (stock 288.9-289.0, variant 357.0-359.1) identical-prefix median 14/128
+guard: probe min 242 GB/s vs p90 242 for Apple M4 Pro|battery (100%) -> ok
+== Qwen3.6-35B-A3B-4bit launch 2
+B=  1: stock    91.1 tok/s  variant   100.5 tok/s  speedup 1.103x  (stock 90.9-91.2, variant 100.4-100.7) identical-prefix median 52/128
+B=  8: stock   193.4 tok/s  variant   211.3 tok/s  speedup 1.093x  (stock 193.2-194.2, variant 211.3-211.5) identical-prefix median 56/128
+B= 32: stock   289.0 tok/s  variant   358.9 tok/s  speedup 1.242x  (stock 288.9-289.1, variant 355.9-358.9) identical-prefix median 14/128
+guard: probe min 242 GB/s vs p90 243 for Apple M4 Pro|battery (100%) -> ok

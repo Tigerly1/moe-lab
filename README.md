@@ -26,6 +26,16 @@ Stock = unmodified mlx-lm. "Ours" = our expert kernels + fused router tail (`pyt
 | verify step of 16 / 32 tokens (speculative decoding, chunked prefill) | 1.47× / 1.79× | 1.71× / 1.54× | 1.33× / 1.63× | yes, if the stack uses it |
 | CPU fully busy (8 threads of other work) | 1.01–1.07× | — | — | no |
 
+**Newer popular local models (round 9, 2026-11-07).** We picked these by downloads: they are the two most-downloaded mlx-community MoE families we did not support yet. Kernels + fused router, 2 launches each:
+
+| situation | Gemma-4-26B-A4B 4-bit | Qwen3.6-35B-A3B 4-bit |
+|---|---|---|
+| one chat (chat prompt, 512 tokens) | 72.3 → 79.8 (**1.10×**) | 83.8 → 92.7 (**1.11×**) |
+| 8 requests at once | 1.14× | 1.09× |
+| 32 requests at once | 230 → 290 (**1.25×**) | 289 → 358 (**1.24×**) |
+
+Below 1.5× at B=32: Qwen3.6 has 256 small experts (~1 token per expert at B=32), and Gemma-4's F=704 runs on scalar tiles. Details: `docs/ACHIEVEMENTS.md`.
+
 - **Use it:** `.venv-latest/bin/python -m moelab.serve --model <mlx-community MoE repo> --decode-concurrency 32`. It is a drop-in `mlx_lm.server` with the kernels; set `MOELAB_STOCK=1` for the unpatched A/B. Server gains are below the BatchGenerator benchmark (1.3–1.4× vs 1.5–1.6×) because the server also spends time on prefill, tokenization and HTTP, which the kernels do not touch.
 - **Where it pays off:** a Mac serving several requests at once. Examples: the `mlx_lm.server` with concurrent users, an agent issuing parallel calls, batch evaluation, synthetic-data generation. Each decode step then sends B tokens from B different sequences through every MoE layer.
 - **Why the gain grows with B:** stock mlx-lm re-reads each expert's weights per (token, slot) until 64 slots, while our kernels group slots by expert and read each expert once per tile. This technique is standard on NVIDIA (vLLM fused_moe, llama.cpp map0 + mul_mm_id); here it is brought to MLX/Metal with measured serving gains (`docs/related_work_r8.md`).
@@ -36,7 +46,7 @@ Stock = unmodified mlx-lm. "Ours" = our expert kernels + fused router tail (`pyt
   - all k experts receiving every token (synthetic only, 0.76×);
   - experts smaller than any studied model (0.93–0.95×).
 - **Correctness:**
-  - 648 tests;
+  - 742 tests;
   - every path vs an fp32 reference, plus real-model multi-token logits;
   - in batched decode at B=32, our logits are closer to the fp32-expert truth than stock's (max per-row error 0.07 vs 0.19, `runs/r8/batch_truth_check.json`).
 - **Output differences:** greedy text differs from stock after a few tokens. The cause is bf16 rounding plus a different tie-breaking between experts with exactly equal bf16 gate logits (9% of Qwen3 token-layers; both choices are valid). Perplexity is within 0.9% of stock on all three models.

@@ -24,6 +24,17 @@ Hardware: Apple M4 Pro, 48 GB, unless stated. Details and caveats: `docs/RESULTS
 
 For Qwen3.6 the fused router matters: with E=256, the stock softmax plus argpartition is a large share of a step.
 
+**Concurrent requests** (BatchGenerator, kernels + fused router, 2 launches, `runs/r9/batch_*`):
+
+| model | B=1 | B=8 | B=32 |
+|---|---|---|---|
+| Gemma-4-26B-A4B | 1.106× / 1.109× | 1.139× / 1.140× | **1.251× / 1.254×** (230 → 290 tok/s) |
+| Qwen3.6-35B-A3B | 1.105× / 1.103× | 1.095× / 1.093× | **1.240× / 1.242×** (289 → 358 tok/s) |
+
+These gains are smaller than the 1.5–1.6× on the older models. The cause is structural, and the layer level shows it (compare, T=32: Qwen3.6 1.21×, Gemma-4 1.28×):
+- **Qwen3.6:** with E=256 there is about 1 token per expert at B=32, so little weight reuse.
+- **Gemma-4:** F=704 is not a multiple of 128, so T>1 runs on the scalar tiles instead of MMA.
+
 **Accuracy** (`scripts/r9_layer_error.py`): per layer on real activations, against fp32 truth on the same inputs.
 
 | model | our error | stock error | our layer closer to fp32 |
@@ -39,6 +50,7 @@ For Qwen3.6 the fused router matters: with E=256, the stock softmax plus argpart
 - **Tiny random models:** logits tolerance tests on them are meaningless, since even fp32 experts differ from stock by 4–14%. The patch tests now require exact equality with the bit-identical fallback, and mutation-checked: removing the shared expert fails.
 
 **Ruled out (measured, not worth doing):**
+- **8-bit and 6-bit kernels.** At T=1, stock already reads at 229–245 GB/s in 8-bit and 210–243 GB/s in 6-bit, the same level as our 4-bit kernel (239–255). The weights differ per call, so the SLC cache does not help (`scripts/r9_bits_probe.py`). The best case is a few percent.
 - **Prefill MoE:** MoE is 55% of a Qwen3 4k-token prefill. But the layer already runs at 4.0 TFLOP/s against a 4.8 TFLOP/s dense-qmm ceiling for the same work, so the best case is ~1.10× prefill. Routing skew changes nothing (real vs random states: 1859 vs 1862 ms).
 - **Further single-stream gains on Qwen3:** we are at ~83% of the bytes/bandwidth ceiling (105 of ~126 tok/s). The rest is non-MoE (attention, lm_head, dispatch).
 

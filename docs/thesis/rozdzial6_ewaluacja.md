@@ -128,6 +128,57 @@ Porównujemy nasz kernel ze ścieżką mlx-lm skwantyzowaną w trybie `mxfp4`. F
 - gpt-oss: MXFP4, biasy, przycięta funkcja SwiGLU;
 - DeepSeek-V2: eksperci współdzieleni, MLA.
 
+## 6.4d. Modele faktycznie używane lokalnie: Gemma-4 i Qwen3.6
+
+**Dobór na podstawie danych.** Wybór kolejnych modeli oparliśmy na liczbie pobrań 400 najpopularniejszych repozytoriów mlx-community (stan z 7.11.2026, `runs/r9/`), a nie na intuicji. Dwie najczęściej pobierane rodziny MoE, których dotąd nie obsługiwaliśmy:
+- Qwen3.5/3.6-35B-A3B (`qwen3_5_moe`): ~87 tys. pobrań, z czego 69 tys. w 4 bitach;
+- Gemma-4-26B-A4B: ~35 tys. pobrań.
+
+Większą popularność miał tylko gpt-oss-20b, który obsługiwaliśmy już wcześniej.
+
+**Nowe elementy:**
+- **Kształty i aktywacja.** Gemma-4 ma eksperty o wymiarze F=704, który nie jest wielokrotnością 512 (ścieżka wolniejsza w stocku, §6.3a), oraz aktywację GeGLU (GELU w wersji tanh) zamiast SwiGLU. Aktywację dodaliśmy jako parametr szablonu `ACT` we wszystkich ścieżkach kernela int4 (GEMV dla T=1, kafelki skalarne, kafelki MMA) oraz w ścieżce zapasowej.
+- **Ekspert współdzielony.** Qwen3.6 ma 256 drobnych ekspertów (F=512) i bramkowanego eksperta współdzielonego, którego uwzględnia łatka.
+
+**Dekodowanie pojedynczej rozmowy** (prompt w szablonie czatu, 512 tokenów, dwa niezależne uruchomienia procesu, `runs/r9/e2e_*`):
+
+| Model | mlx-lm (tok/s) | Kernele | Kernele + połączony router |
+|---|---|---|---|
+| Gemma-4-26B-A4B 4-bit | 72,3 | 78,4 (1,085×) | 79,8 (**1,103×**) |
+| Qwen3.6-35B-A3B 4-bit | 83,8 | 86,4 (1,031×) | 92,7 (**1,106×**) |
+
+Przy E=256 (Qwen3.6) większość zysku daje połączony router (§6.6), bo softmax i `argpartition` po 256 logitach stanowią w stocku znaczną część kroku.
+
+**Równoległe zapytania** (`BatchGenerator`, kernele + połączony router, dwa uruchomienia, `runs/r9/batch_*`):
+
+| Model | B=1 | B=8 | B=32 |
+|---|---|---|---|
+| Gemma-4-26B-A4B | 1,11× | 1,14× | **1,25×** (230 → 290 tok/s) |
+| Qwen3.6-35B-A3B | 1,10× | 1,09× | **1,24×** (289 → 358 tok/s) |
+
+Zysk przy B=32 jest mniejszy niż w modelach z §6.5 (1,5–1,6×). Pomiar na poziomie warstwy (T=32: 1,21× dla Qwen3.6 i 1,28× dla Gemma-4) pokazuje, że przyczyna leży w kształcie modelu, a nie w reszcie sieci:
+- **Qwen3.6:** przy E=256 na eksperta przypada średnio T·k/E = 1 token, więc grupowanie po ekspertach ma mało wag do ponownego użycia.
+- **Gemma-4:** F=704 nie jest wielokrotnością 128, więc działają kafelki skalarne zamiast MMA.
+
+**Inne szerokości bitowe.** Wersje 8- i 6-bitowe tych modeli pobierane są rzadziej (~21 tys. i ~10 tys.). Nie warto pisać dla nich kerneli: stock mlx-lm odczytuje w nich wagi przy T=1 z przepustowością 229–245 GB/s (8 bitów) i 210–243 GB/s (6 bitów), czyli na poziomie naszego kernela 4-bitowego (`scripts/r9_bits_probe.py`).
+
+**Dokładność.** Mierzyliśmy błąd względny wyjścia warstwy ekspertów względem referencji fp32 na tych samych wejściach i z tym samym routingiem. Wejścia pochodzą z rzeczywistych aktywacji podczas dekodowania (`scripts/r9_layer_error.py`).
+
+| Model | Nasz kernel | mlx-lm | Nasz kernel bliżej fp32 |
+|---|---|---|---|
+| Gemma-4 | 2,6·10⁻³ | 5,1·10⁻³ | w 100% z 1920 wywołań |
+| Qwen3.6 | 3,2·10⁻³ | 5,6·10⁻³ | w 100% z 2560 wywołań |
+
+Na poziomie całego modelu perplexity tekstu natywnego wszystkich ramion zgadza się z dokładnością do 1%:
+- Gemma-4: 5,87 (stock), 5,85 (nasz kernel), 5,85 (fp32);
+- Qwen3.6: 2,009, 2,020, 2,029.
+
+Różnice zgodności top-1 (np. 97,1% vs 97,3% dla Gemma-4) mieszczą się w szumie jednego tekstu o długości 400 tokenów. Wszystkie trzy odległości parami są tego samego rzędu, co jest typowe dla chaotycznego wzmacniania drobnych różnic numerycznych przez kolejne warstwy.
+
+**Pułapki pomiarowe wykryte w tej rundzie (§7.13):**
+- **Perplexity surowego tekstu.** Model instruktażowy Gemma-4 ma na naszym zamrożonym korpusie perplexity ~300, co odbiera sens porównaniu argmax. Dlatego używamy tekstu natywnego: odpowiedzi wygenerowanej zachłannie przez ramię fp32 na pytanie w szablonie czatu. Taki tekst nie faworyzuje żadnego z porównywanych ramion.
+- **Surowy prompt.** Bez szablonu czatu Gemma-4 wpada w pętlę „-----”, w której nawet referencja fp32 wybiera inny pierwszy token niż stock.
+
 ## 6.5. Gdzie zysk jest praktyczny: równoległe zapytania
 
 Dekodowanie pojedynczej rozmowy przyspiesza o 7–9% (z połączonym routerem z §6.6: 10–17%). Największy praktyczny zysk pojawia się jednak wtedy, gdy Mac obsługuje kilka zapytań naraz: serwer `mlx_lm.server` z wieloma użytkownikami, agent z równoległymi wywołaniami, ewaluacja na zbiorze. Każdy krok dekodowania przesyła wtedy przez warstwę MoE B tokenów z B różnych sekwencji. Stock mlx-lm aż do 64 slotów czyta wagi ekspertów osobno dla każdej pary (token, slot), a nasze kernele grupują sloty według eksperta.

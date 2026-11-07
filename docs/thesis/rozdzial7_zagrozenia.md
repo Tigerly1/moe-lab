@@ -103,3 +103,11 @@ Zysk z dekodowania mierzyliśmy głównie przy krótkich promptach. Przy dłużs
 - Formaty Q4_0 i MLX 4-bit g64 mają tę samą liczbę bitów, ale różną strukturę skal.
 - W trakcie pomiarów serwera wykryliśmy dwa własne błędy narzędzia: puste prompty oraz nieczytany potok logów blokujący serwer. Wyniki zmierzyliśmy ponownie po poprawkach. Przy okazji potwierdziliśmy błąd mlx-lm 0.32.2: jedno zapytanie z pustym promptem trwale wyłącza wątek generowania serwera. Ta klasa błędów jest już zgłoszona (#1513, #1909).
 
+
+## 7.13. Metryki jakości na modelach instruktażowych i na małych modelach losowych (runda 9)
+
+Trzy pułapki, które bez kontroli dałyby fałszywe wnioski:
+
+1. **Perplexity na surowym korpusie.** Model instruktażowy Gemma-4 ma na korpusie perplexity ~300 we wszystkich ramionach, także w stock mlx-lm. Przy takiej entropii argmax zmienia się od drobnych zaburzeń: zgodność top-1 stock–fp32 spada do 81%. Rozwiązanie: tekst natywny generowany przez ramię fp32 (`--quality-text`). Daje on perplexity 5,9 i zgodność ~97%.
+2. **Prompt bez szablonu czatu.** Na takim prompcie przy prefillu wszystkie trzy ramiona dają różne logity, choć błąd każdej warstwy jest mały (5·10⁻³ w stocku, 2,6·10⁻³ u nas). Nasz wynik był bliżej fp32 niż wynik stock. Pomiary prędkości powtórzyliśmy na prompcie w szablonie czatu (`--chat`): zysk jest ten sam, 1,085×.
+3. **Tolerancja logitów na małych modelach losowych.** Na takich modelach nawet referencja fp32 różni się od stock o 4% (Qwen3.5) i 14% (Gemma-4), więc próg błędu względnego nic nie mówi o poprawności łatki. Test łatek sprawdza dlatego dokładną równość logitów po podmianie kernela na bit-identyczną ścieżkę zapasową. Skuteczność testu potwierdziliśmy mutacją: łatka bez eksperta współdzielonego go nie przechodzi.

@@ -794,6 +794,17 @@ Everything above was re-measured on **mlx-lm 0.32.2** (latest; Python 3.14 venv 
 - `modal setup` for NVIDIA;
 - Xcode (Metal compiler) for an MLX upstream kernel PR.
 
+## Round 9 (2026-11-07, evening): popular local models, Gemma-4 and Qwen3.6
+
+The full record is in `docs/ACHIEVEMENTS.md` (round 9 entry) and the thesis §6.4d and §7.13. Data are in `runs/r9/`. Short version:
+- **Targets chosen by downloads.** These are the two most-downloaded unsupported MoE families. We added GeGLU (`ACT`) to the int4 kernels, a Gemma-4 patch with fused router, and the Qwen3.5 shared expert.
+- **Single stream:** 1.10× (Gemma-4) and 1.11× (Qwen3.6), both with kernels + fused router.
+- **B=32:** 1.25× and 1.24×.
+- **Accuracy:** per-layer error 2× lower than stock in 100% of real-activation calls.
+- **Measured and dropped:**
+  - prefill MoE (≤1.10× possible);
+  - 8/6-bit kernels (stock already at the bandwidth ceiling).
+
 ## Open problems / next steps
 1. ~~Small-batch + skewed routing~~ → solved by `metal_q4_tiles_mma` (round 1). Remaining: gpt-oss (d % 128 ≠ 0) tail path, T=2 with uniform routing (round 3 running).
 2. **Regime dispatcher:** v31 for T ≤ 16, sorted `gather_qmm` above. The crossover sits around T≈16–32 on Qwen3 (RQ1).
