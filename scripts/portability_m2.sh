@@ -3,10 +3,18 @@
 # Same layer benchmarks and seeds as reproduce_headline.sh. End to end only on models that fit in 16 GB:
 #   DeepSeek-V2-Lite 4bit (~9 GB) always; gpt-oss-20b MXFP4 (~12 GB) only with GPTOSS=1 (may exceed the GPU wired limit).
 # Qwen3-30B-A3B (~17 GB) does not fit; its layer is tested with synthetic weights + the recorded real routing trace.
-# Run on AC power, other apps closed. ~15 min. Output: runs/portability_<chip>/
+# Run on AC power, other apps closed. ~30 min + model download (~9 GB). Output: runs/portability_<chip>/ + .tar.gz
+# Fresh clone is enough: the venv is created on first run (needs python3 >= 3.10, e.g. `brew install python@3.12`).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 PY=.venv/bin/python
+if [ ! -x "$PY" ]; then
+  echo "== setup: creating .venv (same pins as the M4 Pro runs)"
+  PYBIN=$(command -v python3.12 || command -v python3.11 || command -v python3.10 || command -v python3)
+  "$PYBIN" -m venv .venv
+  $PY -m pip install -q --upgrade pip
+  $PY -m pip install -q mlx==0.32.4 mlx-lm==0.31.3 numpy==2.2.6 pytest==9.2.0 matplotlib==3.10.9
+fi
 CHIP=$(sysctl -n machdep.cpu.brand_string | tr ' ' '_')
 OUT=runs/portability_$CHIP
 mkdir -p "$OUT"
@@ -45,9 +53,16 @@ $PY -m moelab.e2e --model mlx-community/DeepSeek-V2-Lite-Chat-4bit-mlx --variant
 $PY -m moelab.e2e --model mlx-community/DeepSeek-V2-Lite-Chat-4bit-mlx --variant moelab/variants/mlx/metal_q4_moe.py \
   --verify-chunks 4 16 32 --out "$OUT/e2e_dsv2_verify.json" | grep "^verify" | tee "$OUT/e2e_dsv2_verify.txt"
 
+echo "== 4b. concurrent requests (round-8 headline: M4 Pro B=32 1.54x on DeepSeek-V2-Lite), 2 launches"
+for L in 1 2; do
+  $PY -m moelab.batch_bench --model mlx-community/DeepSeek-V2-Lite-Chat-4bit-mlx --batch 1 8 32 --tokens 128 --rounds 3 \
+    --fused-router --out "$OUT/batch_dsv2_fused_L$L.json" 2>&1 | grep -E "^B=|guard" | tee "$OUT/batch_dsv2_fused_L$L.txt"
+done
+
 if [ "${GPTOSS:-0}" = 1 ]; then
   echo "== 5. end to end, gpt-oss-20b (opt-in)"
   $PY -m moelab.e2e --model mlx-community/gpt-oss-20b-MXFP4-Q8 --variant moelab/variants/mlx/metal_mxfp4_gptoss.py \
     --tokens 512 --rounds 3 --out "$OUT/e2e_gptoss_plain.json" | grep -E "^(stock|variant|speedup)" | tee "$OUT/e2e_gptoss_plain.txt"
 fi
-echo "done: $OUT  (M4 Pro reference: README.md headline, docs/RESULTS.md)"
+tar czf "$OUT.tar.gz" "$OUT"
+echo "done: $OUT  -> send back $OUT.tar.gz (AirDrop is fine). M4 Pro reference: README.md, docs/RESULTS.md"
