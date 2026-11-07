@@ -20,7 +20,11 @@ Every number below is in `runs/*.json` and documented in `docs/RESULTS.md`. Time
 | 04:10 | Tests on **real checkpoint weights** (Qwen3 int4, gpt-oss MXFP4) | all regimes correct |
 | 04:30 | Autoresearch round 5 (MXFP4 after fix) | fp32 per-group scale; second latent overflow (bytes ≥ 241) fixed; T=16 back to 2.00× |
 | 04:35 | gpt-oss-20b e2e on the final kernel | plain **+7.9%**, verify-16 **+69.5%** |
-| 04:40 | Second independent adversarial audit of all claims | see RESULTS.md "Audit 2" |
+| 04:40 | Second independent adversarial audit of all claims | no cheating; CI method, held-out labels and T=1 % corrected |
+| 04:50 | Audit-2 fixes: hierarchical CI, fresh seeds, 8 windows, non-repeating slope, real-model T>1 test | point estimates hold; Qwen3 T=1 at 94% of floor |
+| 05:00 | RQ1 crossover T=16..512 | wins up to T=256, parity at T=512; full-model 32-token chunk 1.86× (Qwen3), 1.52× (gpt-oss) |
+| 05:10 | Thesis chapters 1–3 drafted (agent, 62 refs, ~45 verified) | `docs/thesis/` |
+| 05:15 | 8-min thermal check on final dispatcher | ratio 1.209 → 1.211 |
 
 ## What to look at first
 1. `docs/atlas/index.html`, also published as a private artifact (link in the chat summary).

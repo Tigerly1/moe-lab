@@ -385,6 +385,20 @@ Layer level, int4 dispatcher vs the real mlx-lm path, Qwen3 shapes, 4 launches �
 | ours tok/s | 441.3 | 528.6 | 593.5 | 644.0 |
 | speedup | **1.86×** | 1.37× | 1.20× | 1.08× |
 
+### gpt-oss-20b full model, fixed text in chunks (`runs/e2e_prefill_chunks_gptoss.json`)
+| chunk | 32 | 64 | 128 | 256 |
+|---|---|---|---|---|
+| stock tok/s | 284.1 | 394.1 | 497.1 | 574.0 |
+| ours tok/s | 432.7 | 504.0 | 554.2 | 584.7 |
+| speedup | **1.52×** | 1.28× | 1.11× | 1.02× |
+
+The crossover pattern is the same as Qwen3.
+
+### Thermal check on the final dispatcher (`runs/sustained_T1_dispatcher.json`, 8 min nonstop, T=1)
+- The ratio is 1.209 in the first quarter and 1.211 in the last.
+- Absolute times rose ~2.5% on both sides (mild heating: stock 129.2 → 132.5 µs, ours 106.8 → 109.5 µs), so the ratio is unaffected.
+- This addresses the audit-2 note that the earlier sustained run used `tiles_mma`.
+
 ## Open problems / next steps
 1. ~~Small-batch + skewed routing~~ → solved by `metal_q4_tiles_mma` (round 1). Remaining: gpt-oss (d % 128 ≠ 0) tail path, T=2 with uniform routing (round 3 running).
 2. **Regime dispatcher:** v31 for T ≤ 16, sorted `gather_qmm` above. The crossover sits around T≈16–32 on Qwen3 (RQ1).
