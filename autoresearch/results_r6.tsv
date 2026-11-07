@@ -1,0 +1,8 @@
+commit	score	per_point	status	description
+e5bb986	1.3140	qwen3T2=1.246 qwen3T4=1.433 qwen3T8=1.719 qwen3T16=1.977 olmoeT2=1.031 olmoeT4=1.153 olmoeT8=1.189 deepseekT2=1.110 deepseekT4=1.205 deepseekT8=1.340	gate-fail	baseline tiles_v2 (fails tiny-scale test at T16/T32)
+2b6cc62	1.3102	qwen3T2=1.246 qwen3T4=1.436 qwen3T8=1.709 qwen3T16=1.956 olmoeT2=1.031 olmoeT4=1.149 olmoeT8=1.178 deepseekT2=1.110 deepseekT4=1.206 deepseekT8=1.334	keep	raw-code MMA + fp32 scale/bias per 64-group (k=8c+s), bfloat MMA operands for bf16, shuffle colsum; gate passes, worst_rel 0.0036
+-	-	probe: qwen3 T8 491us(vs404) T16 640(vs508) olmoe T8 694(vs592)	discard	VT=16 (2nd B/C set on same A decode): much slower everywhere (occupancy/regs), no bench
+1327a40	1.3159	qwen3T2=1.248 qwen3T4=1.435 qwen3T8=1.725 qwen3T16=1.997 olmoeT2=1.028 olmoeT4=1.154 olmoeT8=1.194 deepseekT2=1.113 deepseekT4=1.204 deepseekT8=1.330	below-threshold	gate_up MMA 16 rows/TG, explicit regs (array version spilled: 3x slower). +0.006 < ci; kept only as base for stacking
+-	-	probe qwen3T16 516-527us vs 501, T8 426-444 vs 405, olmoeT8 605-618 vs 581 (Q=1,2,4,8)	discard	compacted tile list + tile loop per TG row (no empty TGs): slower at every Q, no bench
+-	-	probe qwen3T16 492 vs 493, T8 400 vs 398, olmoeT8 585 vs 571; MMA per=8 286 vs 283	discard	gate_up MMA row mode (16 rows/simdgroup, full K, no threadgroup reduction): neutral, no bench
+c13f535	1.3197	qwen3T2=1.251 qwen3T4=1.423 qwen3T8=1.732 qwen3T16=2.021 olmoeT2=1.029 olmoeT4=1.149 olmoeT8=1.204 deepseekT2=1.117 deepseekT4=1.205 deepseekT8=1.341	below-threshold	+ down MMA 16 rows/TG (stacked on gate_up MR2): +0.0095 over kept, ci 0.041 -> discard (saved on branch autoresearch/int4-scales-r6-mr2)
