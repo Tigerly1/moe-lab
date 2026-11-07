@@ -637,10 +637,12 @@ On the final code (`runs/sweep_*_final*.json`):
   - NaN logits count as −∞. With fewer than k finite logits the remaining slots get unused ids and weight 0 (audit: the first version wrote out of bounds there).
   - DeepSeek-V3 gates (sigmoid + correction bias) stay stock.
   - Opt-in: `e2e.py --fused-router`; on by default in `moelab/generate.py`.
-- **Semantics change, measured** (`runs/router_ties.json`):
-  - Stock Qwen3 routing rounds the softmax to bf16 *before* argpartition.
-  - On 512 real tokens × 48 layers, stock and exact top-8 pick different experts in **9.00%** of token-layers, and **every one** of those is an exact tie of the bf16 probabilities, where stock's pick is arbitrary.
-  - The fused kernel picks the larger logit. This is why greedy outputs diverge from stock at token 2 instead of token 22.
+- **Semantics change, measured** (`runs/router_ties.json`, corrected in round 8 by `runs/r8/router_fix_qwen3_moe.json`):
+  - On 512 real tokens × 48 layers, stock and the fused kernel pick different experts in **9.00%** of token-layers.
+  - Round-7 claim, **withdrawn**: that stock's bf16-rounded softmax decides these arbitrarily and the fused kernel "picks the larger logit".
+  - Round 8 checked stock with its own selection code (`argpartition(g, kth=-k)[..., -k:]`). Stock always returns a valid top-8 by logit (0 of 24,576 wrong). Every difference is an exact tie of the **bf16 gate logits** themselves: two experts with the same score, so either choice is equally correct.
+  - The fused kernel breaks ties by lowest id, stock by its partition order; an fp32 softmax cannot change this. That tie-breaking difference is why greedy outputs diverge from stock at token 2.
+  - The first round-8 check also used the wrong (DeepSeek-style) selection form for Qwen3; it is superseded.
 - **End to end** (`runs/r7/*.json`, same session, 512 tokens × 3 rounds, all guard ok; stock is unmodified mlx-lm in every row):
 
 | model | our kernels | kernels + fused router | verify 4 / 16 / 32, kernels + router |

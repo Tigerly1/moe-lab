@@ -1,9 +1,11 @@
 {
  "model": "mlx-community/Qwen3-30B-A3B-4bit",
+ "selection": "argpartition(g)[-k:]",
  "token_layers": 24576,
- "stock_differs_from_exact": 0,
- "of_which_bf16_ties": 0,
- "fix_differs_from_exact_beyond_logit_ties": 0,
- "router_tail_ms_stock": 0.6496874993899837,
- "router_tail_ms_fix": 0.8059374813456088
+ "stock_wrong_set": 0,
+ "of_which_exact_bf16_prob_ties": 0,
+ "fixA_wrong_set": 0,
+ "tail_ms_stock": 0.9747295116540045,
+ "tail_ms_fixA_fp32softmax": 1.1130215134471655,
+ "tail_ms_fixB_rank_on_logits": 1.1563965090317652
 }

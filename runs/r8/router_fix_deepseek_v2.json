@@ -1,9 +1,11 @@
 {
  "model": "mlx-community/DeepSeek-V2-Lite-Chat-4bit-mlx",
+ "selection": "argpartition(-g)[:k]",
  "token_layers": 13312,
- "stock_differs_from_exact": 9,
- "of_which_bf16_ties": 9,
- "fix_differs_from_exact_beyond_logit_ties": 0,
- "router_tail_ms_stock": 0.38897899503353983,
- "router_tail_ms_fix": 0.3944795025745407
+ "stock_wrong_set": 9,
+ "of_which_exact_bf16_prob_ties": 0,
+ "fixA_wrong_set": 0,
+ "tail_ms_stock": 0.46035398554522544,
+ "tail_ms_fixA_fp32softmax": 0.4662289866246283,
+ "tail_ms_fixB_rank_on_logits": 0.4284164751879871
 }

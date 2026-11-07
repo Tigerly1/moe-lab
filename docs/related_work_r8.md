@@ -36,3 +36,5 @@ Checked by an agent; the two key papers were then re-opened by me (abstract plus
   - grouping tokens by expert is standard on GPUs (vLLM fused_moe #2542, llama.cpp #12612 map0 + mul_mm_id, PyTorch column-major MoE blog);
   - the claim is therefore the technique on a unified-memory Metal stack with measured serving gains.
   - Must cite: mlx #4509, #4598 (rejected), #4572 (merged, included in MLX 0.32.3+, so in our 0.32.4 baseline), discussion #3801, mlx-lm #626 (server batching), #956 (gate/up fusion; `MLX_MAX_MB_PER_BUFFER` confound noted there).
+
+**Round-8 correction:** the measurement in `runs/r8/router_fix_*.json` shows mlx-lm's bf16 probabilities do not cause wrong expert picks. The differing picks are exact ties of the bf16 gate logits, which every framework has: they also compute the gate in bf16, and only the softmax in fp32. The router-precision issue idea is dropped. The vLLM/TRT-LLM "lower index wins" convention remains relevant only for deterministic tie-breaking.

@@ -51,7 +51,7 @@ def main():
     ap.add_argument("--compare", action="store_true")
     ap.add_argument("--no-fused-router", action="store_true", help="keep mlx-lm's softmax/argpartition router tail")
     a = ap.parse_args()
-    e2e.FUSED_ROUTER = not a.no_fused_router   # round 7: exact top-k, faster; PPL equal or better (docs/RESULTS.md)
+    e2e.FUSED_ROUTER = not a.no_fused_router   # round 7: faster (fewer dispatches); ties broken by lowest id, PPL within 0.9% of stock (docs/RESULTS.md)
     model, tok = load(a.model)
     variant = pick_variant(model)
     cls, n = e2e.patch(model, load_variant(variant))
