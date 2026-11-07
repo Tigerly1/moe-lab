@@ -72,3 +72,7 @@ Estymaty punktowe się utrzymały.
 - gpt-oss-120b ma ten sam kształt eksperta co gpt-oss-20b.
 
 **Cache w łańcuchu pomiarowym.** Łańcuch pomiarowy obracał tylko 3 wejścia, przez co zestawy ekspertów powtarzały się co trzecie wywołanie i część odczytów trafiała do cache. Przy niepowtarzającym się routingu odsetek sufitu dla Qwen3 spada z 98,5% do 93,7%. Przyspieszenie zmienia się nieznacznie: z 1,24× na 1,22×.
+
+## 7.8. Długość kontekstu
+
+Zysk z dekodowania mierzyliśmy głównie przy krótkich promptach. Przy dłuższym kontekście rośnie udział atencji, czyli odczytów pamięci podręcznej KV, więc zysk maleje zgodnie z prawem Amdahla. Dla Qwen3-30B-A3B przy 8 tys. tokenów kontekstu wynosi on +4,3%, wobec +9,0% przy krótkim promptcie. Wnioski o warstwie MoE pozostają bez zmian, ale korzyść w pełnym systemie zależy od profilu obciążenia.

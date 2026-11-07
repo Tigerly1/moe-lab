@@ -484,6 +484,15 @@ Plain decode gains +7–9% on all three; verify/batch steps of 16–32 tokens ga
   - Plausible causes: shared experts absorb common tokens, plus DeepSeek's strong load balancing. Both are hypotheses, not tested.
 - **This matches the e2e results:** the DeepSeek verify-step gain (+34% at 16 tokens) is the smallest of the three models (Qwen3 +48%, gpt-oss +70%). The expert-reuse benefit scales with locality, as the model in chapter 4 predicts (traffic ∝ U(T)).
 
+### Decode gain vs context length (Qwen3-30B-A3B-4bit, `e2e.py --context N`, 256 tokens × 2 rounds)
+| prompt length | ~30 | 1,024 | 4,096 | 8,192 |
+|---|---|---|---|---|
+| stock tok/s | 91.5 | 83.5 | 74.5 | 57.2 |
+| ours tok/s | 99.8 | 90.3 | 79.9 | 59.6 |
+| gain | +9.0% | +8.1% | +7.2% | **+4.3%** |
+
+This is Amdahl's law. With longer contexts, attention (KV-cache reads) takes a growing share of each decode step, so a faster MoE layer matters less. The MoE kernels themselves are unchanged. Long-context serving would also need attention work, which is out of scope here.
+
 ## Open problems / next steps
 1. ~~Small-batch + skewed routing~~ → solved by `metal_q4_tiles_mma` (round 1). Remaining: gpt-oss (d % 128 ≠ 0) tail path, T=2 with uniform routing (round 3 running).
 2. **Regime dispatcher:** v31 for T ≤ 16, sorted `gather_qmm` above. The crossover sits around T≈16–32 on Qwen3 (RQ1).

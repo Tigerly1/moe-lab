@@ -25,6 +25,7 @@ Production kernels:
 Qwen3 and gpt-oss rows were reproduced in one clean run (`scripts/reproduce_headline.sh`, seeds 5000+, output in `runs/repro/`, 2026-11-07 05:46). The DeepSeek row was measured at 05:55 (`runs/e2e_dsv2_*.json`).
 
 - Quality: perplexity is unchanged; the kernels are as close to fp32 as stock or closer.
+- The decode gain shrinks with context length (Amdahl's law: attention grows): Qwen3 +9.0% at ~30 tokens, +7.2% at 4k, +4.3% at 8k.
 - The verify step is what speculative decoding and small-batch serving run. On this setup, free-running speculative decoding with a 0.6B draft is itself slower than plain decoding (stock 72–77 vs 91.5 tok/s).
 
 **MoE layer vs the real mlx-lm path** (bf16; fresh seeds; CIs resampled by launch):

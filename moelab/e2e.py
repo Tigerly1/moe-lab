@@ -112,10 +112,11 @@ def _patch_gptoss(model, mod):
     return cls, len(blocks)
 
 
-def decode(model, tok, n, draft=None, num_draft=3):
+def decode(model, tok, n, draft=None, num_draft=3, prompt=None):
     out, tps, acc = [], None, 0
     kw = {"draft_model": draft, "num_draft_tokens": num_draft} if draft is not None else {}
-    for r in stream_generate(model, tok, PROMPT, max_tokens=n, sampler=make_sampler(temp=0.0), **kw):
+    for r in stream_generate(model, tok, prompt if prompt is not None else PROMPT, max_tokens=n,
+                             sampler=make_sampler(temp=0.0), **kw):
         out.append(r.token)
         tps = r.generation_tps
         acc += bool(getattr(r, "from_draft", False))
@@ -201,6 +202,7 @@ def main():
     ap.add_argument("--num-draft", type=int, default=3)
     ap.add_argument("--max-t", type=int, default=MAX_T, help="use the variant for calls with <= this many tokens")
     ap.add_argument("--out", default=None)
+    ap.add_argument("--context", type=int, default=0, help="prompt of this many tokens (frozen corpus, repeated) before decoding")
     ap.add_argument("--verify-chunks", type=int, nargs="*", default=None,
                     help="acceptance-free verify benchmark with these chunk sizes, e.g. 1 2 4 7 16")
     a = ap.parse_args()
@@ -216,12 +218,16 @@ def main():
         if a.out:
             json.dump(out, open(a.out, "w"), indent=1)
         return
+    ctx_prompt = None
+    if a.context:
+        ids = tok.encode(open(__file__.replace("e2e.py", "data/quality_corpus.txt")).read())
+        ctx_prompt = (ids * (a.context // len(ids) + 1))[:a.context]
     res = {"stock": [], "variant": []}
     outs = {}
     for r in range(a.rounds + 1):  # round 0 = warmup
         for name in (("stock", "variant") if r % 2 == 0 else ("variant", "stock")):
             cls._use_variant = name == "variant"
-            o, tps = decode(model, tok, a.tokens, draft, a.num_draft)
+            o, tps = decode(model, tok, a.tokens, draft, a.num_draft, ctx_prompt)
             if r > 0:
                 res[name].append(tps)
                 outs[name] = o
