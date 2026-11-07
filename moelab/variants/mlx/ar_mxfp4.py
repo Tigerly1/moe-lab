@@ -1,10 +1,11 @@
-"""Custom Metal MXFP4 MoE kernels (autoresearch round 4).
+"""Custom Metal MXFP4 MoE kernels (autoresearch round 5).
 
 Format: mx.quantize(mode="mxfp4"): uint32 words of 8 E2M1 codes (low nibble first), one E8M0
 scale byte per 32 weights = exactly one uint4 load per scale group.
 E2M1 -> half is exact by bit placement: sign -> bit 15, the 3 magnitude bits -> bits 9..11
-(exponent field e, mantissa m). That half equals value * 2^-14 (also for e=0: subnormal),
-so the 2^14 is folded into the group scale: float with exponent field s + 14.
+(exponent field e, mantissa m). That half equals value * 2^-14 (also for e=0: subnormal).
+The group scale is the float 2^(s-127) (exact for every byte 1..254, applied in fp32); the 2^14 is
+restored once per output (SiLU inputs, routing weight).
 
 T == 1: v4-style GEMV (gate+up+SiLU fused, one simdgroup per row; down with LPR lanes per row and
 the k slots reduced in threadgroup memory -> 2 dispatches). At the bandwidth floor.
@@ -12,7 +13,8 @@ the k slots reduced in threadgroup memory -> 2 dispatches). At the bandwidth flo
 so a pair shares every weight decode (the scalar path is ALU-bound once weights hit in cache);
 down writes w*y per slot (fp32) and a combine kernel sums k.
 T >= T_GROUP: map prepass groups slots by expert (<= G); groups of 1-2 run the scalar GEMV,
-groups of >= 3 run simdgroup_matrix 8x8 MMA (half A/B, fp32 acc) with one decode per group.
+groups of >= 3 run simdgroup_matrix 8x8 MMA (half A/B, fp32 acc) with one decode per group;
+the E8M0 scale is applied in fp32 to each scale group's partial product, never in half.
 """
 import mlx.core as mx
 
@@ -133,8 +135,9 @@ DOWN_SRC = """
 # (rank among same-expert slots; rank % 8 == 0 leads, the rest return). Group size n:
 #   1 -> per-slot GEMV (simdgroup j: row row0 + j), 2 -> GEMV with one decode for both slots,
 #   >= 3 -> simdgroup_matrix 8x8 (half A/B, fp32 acc), the 8 simdgroups split K, reduced in threadgroup
-#   memory. MMA k-remap inside a 64-block: k = 8c + s (c = fragment col, s = step), so each lane's A
-#   pair comes from words c, c+1 (same scale group) and its B values are 8 contiguous activations.
+#   memory. MMA k-remap inside a 32-weight scale group: k = 4c + s (c = fragment col, s = step 0..3), so
+#   all 4 steps of a group share one scale: P = sum of the 4 MMAs, C += scale * P in fp32 (per lane: row fm).
+#   A lane's pair (c, c+1) = nibbles s, s+4 of word c/2 (one fp4x2), its B values 4 contiguous activations.
 MAP_SRC = """
     uint p = thread_position_in_grid.x;
     if (p >= TK) return;
