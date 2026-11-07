@@ -69,14 +69,14 @@ a{color:var(--accent)}
   <div class="eyebrow">Lab notebook · Apple M4 Pro · 2026-11-07</div>
   <h1>MoE Kernel Atlas</h1>
   <p class="lede">What we learned optimizing the Mixture-of-Experts layer of Qwen3-30B-A3B for LLM decoding on an Apple GPU: what was measured, what was refuted, and what is still open.</p>
-  <p class="hand">→ every number here comes from a measurement with a correctness gate. All headline numbers were reproduced in one clean run at 05:46 (scripts/reproduce_headline.sh). Two independent audits; every correction is documented.</p>
+  <p class="hand">→ every number here comes from a measurement with a correctness gate. All headline numbers were reproduced in one clean run at 05:46 (scripts/reproduce_headline.sh). Three independent audits; every correction is documented.</p>
 </header>
 
 <div class="kpis">
   <div class="kpi"><b>+9.0%</b><span>end-to-end decode, Qwen3-30B-A3B-4bit, AC: 91.6 → 99.8 tok/s</span></div>
   <div class="kpi"><b>94–103%</b><span>of the 250 GB/s floor at T=1 with non-repeating routing (Qwen3, gpt-oss, Mixtral); mlx-lm: 77% on Qwen3</span></div>
   <div class="kpi"><b>+48%</b><span>full-model verify step of 16 tokens, Qwen3, same text both arms (195 → 289 tok/s); gpt-oss +70%</span></div>
-  <div class="kpi"><b>3 models</b><span>end-to-end decode gains on Qwen3-30B-A3B (+9.0%), gpt-oss-20b MXFP4 (+8.0%), DeepSeek-V2-Lite with shared experts (+7.1%)</span></div>
+  <div class="kpi"><b>3 models</b><span>end-to-end decode gains on Qwen3-30B-A3B (+9.0%), gpt-oss-20b MXFP4 (+8.0%), DeepSeek-V2-Lite with shared experts (+7.2%)</span></div>
 </div>
 
 <section>
@@ -130,7 +130,7 @@ a{color:var(--accent)}
     <aside><p class="hand">Adjacent tokens share 43–47% of their experts. Random routing would give 6.2%.</p><p class="hand">Top 10% of experts take 42–59% of picks.</p></aside>
     <figcaption>Unique experts touched by T tokens. Slots = what a per-slot kernel reads. Uniform = E(1−(1−k/E)^T).</figcaption>
   </div>
-  <p class="prose">A second, very different MoE shows the same thing. In gpt-oss-20b (32 experts, top-4), adjacent tokens share 41–50% of their experts against 12.5% at random, and 8 consecutive tokens touch about 13 experts for 32 slots. A third model draws the limits of that pattern. DeepSeek-V2-Lite (64 experts plus 2 shared, top-6) shares only 18–29% (2–3× random), with nearly uniform expert popularity, and 8 tokens touch 27–30 of 64 experts against 35 at random. Its verify-step gain is correspondingly smaller (+34% at 16 tokens vs +48% for Qwen3 and +70% for gpt-oss). Locality is model-dependent; shared experts and strong load balancing plausibly reduce it.</p>
+  <p class="prose">A second, very different MoE shows the same thing. In gpt-oss-20b (32 experts, top-4), adjacent tokens share 41–50% of their experts against 12.5% at random, and 8 consecutive tokens touch about 13 experts for 32 slots. A third model draws the limits of that pattern. DeepSeek-V2-Lite (64 experts plus 2 shared, top-6) shares only 18–29% (2–3× random), with nearly uniform expert popularity, and 8 tokens touch 27–30 of 64 experts against 35 at random. Its 16-token verify gain is the smallest of the three (+33.5% vs +48% and +70%). At 32 tokens, though, it beats gpt-oss, so "gain follows locality" is a hypothesis, not a result. Locality is model-dependent; shared experts and strong load balancing plausibly reduce it.</p>
   <div class="fig">
     <div class="plot"><canvas id="cL" role="img" aria-label="Adjacent-token expert overlap per layer, 48 layers">Layer 0 at 17%, deep layers 40–54%.</canvas></div>
     <aside><p class="hand">Layer 0 routes almost randomly (17%). From layer ~5 on it is 40–54%.</p><p class="hand">Same pattern reported for Mixtral. Worth a thesis figure.</p></aside>
@@ -195,10 +195,10 @@ a{color:var(--accent)}
       <tr><td>plain decode, battery, 256 tok (v31, earlier)</td><td>85.3</td><td>91.3</td><td>+7.1%</td></tr>
       <tr><td>speculative, 6 drafts, outputs identical 512/512</td><td>76.5</td><td>92.3</td><td>+20.8%</td></tr>
       <tr class="lose"><td>speculative, 3 drafts, outputs diverge at token 22</td><td>71.8</td><td>67.4</td><td>confounded</td></tr>
-      <tr class="win"><td>Qwen3, chunk of 32 / 64 / 128 / 256 tokens (short prefill or batch)</td><td>237.5 / 387.0 / 494.6 / 595.8</td><td>441.3 / 528.6 / 593.5 / 644.0</td><td>+86% / +37% / +20% / +8%</td></tr>
+      <tr class="win"><td>Qwen3, chunk of 32 / 64 / 128 / 256 tokens (short prefill or batch)</td><td>237.4 / 387.0 / 503.0 / 598.5</td><td>435.5 / 529.4 / 600.4 / 652.0</td><td>+83% / +37% / +19% / +9%</td></tr>
       <tr class="win"><td>gpt-oss-20b (MXFP4), plain decode, 512 tok</td><td>75.5</td><td>81.5</td><td>+7.9%</td></tr>
       <tr class="lose"><td>Qwen3 plain decode vs context length: ~30 / 1k / 4k / 8k tokens</td><td>91.5 / 83.5 / 74.5 / 57.2</td><td>99.8 / 90.3 / 79.9 / 59.6</td><td>+9.0% / +8.1% / +7.2% / +4.3%</td></tr>
-      <tr class="win"><td>DeepSeek-V2-Lite (shared experts, MLA), plain decode / verify 16 / chunk 32</td><td>126.9 / 257.4 / 324.8</td><td>135.9 / 343.6 / 531.0</td><td>+7.1% / +34% / +64%</td></tr>
+      <tr class="win"><td>DeepSeek-V2-Lite (shared experts, MLA), plain decode (identical output) / verify 16 / chunk 32</td><td>126.4 / 257.4 / 324.8</td><td>135.5 / 343.6 / 531.0</td><td>+7.2% / +33.5% / +63.5%</td></tr>
       <tr class="win"><td>gpt-oss-20b, verify step of 4 / 16 tokens</td><td>125.9 / 174.8</td><td>160.4 / 296.4</td><td>+27% / +70%</td></tr>
     </tbody></table></div>
   <p class="hand">Pitfall: once the two arms generate different text, draft acceptance differs (0.63 vs 0.54) and tok/s no longer compares kernels. That is why the verify benchmark exists.</p>
@@ -225,7 +225,7 @@ a{color:var(--accent)}
   <h2>8. Questions worth your eyes</h2>
   <ul class="q prose">
     <li><b>Solved:</b> why did our untiled kernel gain on Mixtral as T grew? With 8 slots on 8 distinct experts, both kernels run at ~260 GB/s. With 8 slots on 2 experts, MLX still takes 3063 µs but ours takes 2243 µs. Our grid runs slots of the same expert concurrently, so their weights come from cache. MLX orders the batch outermost and re-reads. What else does dispatch order decide?</li>
-    <li><b>Answered (RQ1):</b> where does the gain end as T grows? Our kernels win up to T=256 and tie mlx-lm's sorted grouped GEMM at T=512, where the layer turns compute-bound. The analytic ridge (T*≈157) predicts this shape.</li>
+    <li><b>Answered (RQ1):</b> where does the gain end as T grows? Our kernels win up to T=256 and are 1–2% slower than mlx-lm's sorted grouped GEMM at T=512, where the layer turns compute-bound. The analytic ridge (T*≈157) predicts this shape.</li>
     <li>Layer 0 routes nearly at random while deeper layers reuse ~50%. Should the kernel choose its strategy per layer?</li>
     <li>Speculative decoding loses to plain decoding on this MoE. Would an expert-budgeted draft (MoE-Spec style) or MTP heads flip that, now that verify cost is ~1.6× cheaper?</li>
     <li>The MMA kernel needs d % 128 = 0, so gpt-oss (2880) uses the scalar tile kernel. Is a tail path worth it?</li>

@@ -20,29 +20,36 @@ Production kernels:
 |---|---|---|---|---|
 | Qwen3-30B-A3B-4bit | 91.5 → **99.8 tok/s (+9.0%)** | +23% | +48% | +84% |
 | gpt-oss-20b-MXFP4 | 75.3 → **81.3 tok/s (+8.0%)** | +27% | +70% | +52% |
-| DeepSeek-V2-Lite-4bit (shared experts, MLA) | 126.9 → **135.9 tok/s (+7.1%)** | +14% | +34% | +64% |
+| DeepSeek-V2-Lite-4bit (shared experts, MLA) | 126.4 → **135.5 tok/s (+7.2%)** | +13.7% | +33.5% | +63.5% |
 
-Qwen3 and gpt-oss rows were reproduced in one clean run (`scripts/reproduce_headline.sh`, seeds 5000+, output in `runs/repro/`, 2026-11-07 05:46). The DeepSeek row was measured at 05:55 (`runs/e2e_dsv2_*.json`).
+Sources:
+- The Qwen3 row and the gpt-oss plain/verify cells were reproduced in one clean run (`scripts/reproduce_headline.sh`, seeds 5000+, `runs/repro/`, 05:46).
+- The gpt-oss chunk-32 cell is `runs/e2e_prefill_chunks_gptoss_r6.json`.
+- The DeepSeek row is `runs/e2e_dsv2_plain_r6.json` and `runs/e2e_dsv2_verify.json`.
+- All were measured on the final kernels.
 
-- Quality: perplexity is unchanged; the kernels are as close to fp32 as stock or closer.
-- The decode gain shrinks with context length (Amdahl's law: attention grows): Qwen3 +9.0% at ~30 tokens, +7.2% at 4k, +4.3% at 8k.
+- Quality: perplexity is within 0.1% of stock on all three models. Top-1 agreement with an fp32-expert reference is as high as stock or higher. On DeepSeek our perplexity is 0.1% further from fp32 than stock (41.40 vs 41.35; fp32 41.26). Files: `runs/e2e_dsv2_quality.json`; Qwen3 and gpt-oss in `docs/RESULTS.md`.
+- Plain-decode greedy outputs are identical to stock only on DeepSeek (225/225 tokens). On Qwen3 and gpt-oss they diverge after ~22 tokens (bf16 noise); both arms still decode the same number of tokens.
+- The decode gain shrinks with context length (Amdahl's law: attention grows): Qwen3 +8.1% at 1k, +7.2% at 4k, +4.3% at 8k context (256 tokens × 2 rounds, `runs/e2e_context_*.json`).
 - The verify step is what speculative decoding and small-batch serving run. On this setup, free-running speculative decoding with a 0.6B draft is itself slower than plain decoding (stock 72–77 vs 91.5 tok/s).
 
 **MoE layer vs the real mlx-lm path** (bf16; fresh seeds; CIs resampled by launch):
 
 | | T=1 | T=8 (real traces) | T=16 (real traces) | T=32 (real traces) |
 |---|---|---|---|---|
-| int4 dispatcher, Qwen3 | 1.20 [1.19, 1.21] | 1.75 [1.63, 1.83] | 2.02 [1.90, 2.13] | 2.46 [2.40, 2.53] |
-| MXFP4, Qwen3 | 1.26 [1.25, 1.27] | 1.76 [1.68, 1.80] | 2.01 [1.90, 2.08] | 2.37 [2.32, 2.42] |
+| int4 dispatcher, Qwen3 | 1.21 [1.20, 1.21] | 1.72 [1.67, 1.75] | 2.05 [1.89, 2.11] | 2.45 [2.27, 2.57] |
+| MXFP4, Qwen3 | 1.26 [1.25, 1.27] | 1.73 [1.70, 1.76] | 2.07 [1.95, 2.10] | 2.40 [2.24, 2.51] |
 
-- **Crossover (RQ1):** our kernels win up to T=256 and reach parity with mlx-lm's sorted grouped GEMM at T=512. Whole-model 32-token chunks (short prefill or batch): **1.86×**.
+The table values come from the reproduction run on the final kernels (`runs/repro/*_qwen3_trace.json`, seeds 5000+).
+
+- **Crossover (RQ1):** our kernels win up to T=256 (1.09–1.10×). At T=512 they are 1–2% slower than mlx-lm's sorted grouped GEMM, so e2e uses stock above 256 tokens. Whole-model 32-token chunks (short prefill or batch): **1.83×** (`runs/crossover_r6_*`, `runs/e2e_prefill_chunks_qwen3_r6.json`).
 - **Clean held-out shape (Qwen3-235B, uniform routing):** int4 1.06–1.26×, MXFP4 1.07–1.23×. Partially seen shapes: Mixtral up to 1.82× and DeepSeek-V2-Lite up to 1.42× (MXFP4).
-- **T=1 is at the memory wall.** With non-repeating routing our GEMV reads at 94% (Qwen3), 100% (gpt-oss) and ~103% (Mixtral) of 250 GB/s. mlx-lm reaches 77% on Qwen3.
+- **T=1 is at the memory wall.** With non-repeating routing our GEMV reads at 93% (Qwen3), 100% (gpt-oss) and ~103% (Mixtral) of 250 GB/s. mlx-lm reaches 77% on Qwen3.
 - **Mechanism at T=1:**
   - about half the gain comes from MLX's qmv fast path requiring K % 512 == 0, which Qwen3 (K=768) and gpt-oss (2880) miss;
   - the rest from fusion and full lane use.
 - **Mechanism at T>1:**
-  - consecutive tokens share ~45% of their experts (real routing traces);
+  - consecutive tokens share 41–50% of their experts in Qwen3 and gpt-oss, but only 18–29% in DeepSeek-V2-Lite (real routing traces);
   - the kernels group slots by expert and read each expert's weights once per tile (simdgroup 8×8 MMA);
   - at T≥8 they become compute-bound (~80% of the measured 6.2 TFLOPS MMA issue rate).
 - **Not a clock boost:** 10-minute sustained runs and battery vs AC leave the ratio unchanged. Other Apple chips are untested.

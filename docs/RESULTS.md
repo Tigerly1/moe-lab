@@ -479,19 +479,58 @@ Plain decode gains +7–9% on all three; verify/batch steps of 16–32 tokens ga
 | different sequences | 6 | 11.4 | 20.4 | 33.5 | 48.2 | 58.8 |
 | consecutive tokens | 6 | 10.4–10.8 | 17.3–18.3 | 27.0–29.5 | 38.5–41.4 | 50.8–52.5 |
 
-- **Weaker locality than the other two models:** adjacent-token overlap is 18–29%, against 9.4% for random routing (2–3×, compared with 4–7× for Qwen3 and 3–4× for gpt-oss). Expert popularity is nearly uniform (entropy 0.95–0.97, top-10% share 22–24%, no unused experts).
+- **Weaker locality than the other two models:** adjacent-token overlap is 18–29%, against 9.4% for random routing (1.9–3.1×, compared with 6.9–7.6× for Qwen3 and 3.3–4.0× for gpt-oss). Expert popularity is nearly uniform (entropy 0.95–0.97, top-10% share 22–24%, no unused experts).
 - **Correction of an earlier generalisation:** "~45% locality is a property of trained MoE routers" does not hold. Locality is model-dependent.
   - Plausible causes: shared experts absorb common tokens, plus DeepSeek's strong load balancing. Both are hypotheses, not tested.
-- **This matches the e2e results:** the DeepSeek verify-step gain (+34% at 16 tokens) is the smallest of the three models (Qwen3 +48%, gpt-oss +70%). The expert-reuse benefit scales with locality, as the model in chapter 4 predicts (traffic ∝ U(T)).
+- **Consistent with, but not proof of, a locality effect:** the DeepSeek verify-step gain at 16 tokens (+33.5%) is the smallest of the three models (Qwen3 +48%, gpt-oss +70%). At 32 tokens, though, DeepSeek (+63.5%) beats gpt-oss (+52%). Shapes, attention type (MLA) and quantization format also differ between the models, so "benefit scales with locality" remains a hypothesis (audit 3).
 
 ### Decode gain vs context length (Qwen3-30B-A3B-4bit, `e2e.py --context N`, 256 tokens × 2 rounds)
-| prompt length | ~30 | 1,024 | 4,096 | 8,192 |
+| prompt length | ~30 (reproduction run, 512 tok × 3) | 1,024 | 4,096 | 8,192 |
 |---|---|---|---|---|
 | stock tok/s | 91.5 | 83.5 | 74.5 | 57.2 |
 | ours tok/s | 99.8 | 90.3 | 79.9 | 59.6 |
 | gain | +9.0% | +8.1% | +7.2% | **+4.3%** |
 
+The 1k/4k/8k points are single launches with 2 rounds each. The spread between rounds is under 0.4%.
+
 This is Amdahl's law. With longer contexts, attention (KV-cache reads) takes a growing share of each decode step, so a faster MoE layer matters less. The MoE kernels themselves are unchanged. Long-context serving would also need attention work, which is out of scope here.
+
+## Audit 3 (2026-11-07 ~06:10): review of everything added after audit 2, and the fixes
+1. **Real bug in round 6:** fp32 activations on the T>1 MMA path lost ~10% accuracy silently.
+   - Cause: the MMA used x rounded to half, while Σx came from exact fp32; the OFF=1024 cancellation amplified the difference.
+   - bf16/fp16 are exact, and all models run in bf16, so no headline number changed.
+   - **Fix:** the dispatcher sends fp32 at T>1 to the exact scalar tile path; `tiles_v2` now asserts bf16/fp16.
+   - **New test** `tests/test_fp32_activations.py`: it fails on the old dispatcher (5 cases) and passes now.
+2. **README mixed kernel versions:** the layer table, crossover and chunk-32 numbers predated round 6. All of them were re-measured on the final kernels:
+
+   | | T=16 | 32 | 64 | 128 | 256 | 512 |
+   |---|---|---|---|---|---|---|
+   | crossover, traces (`runs/crossover_r6_q4_qwen3_trace.json`) | 1.95 | 2.43 | 1.53 | 1.29 | 1.10 | **0.98** [0.96, 0.99] |
+   | crossover, uniform (`…_uniform.json`) | 1.27 | 1.53 | 1.87 | 1.36 | 1.09 | **0.99** [0.98, 0.99] |
+
+   - At T=512 the kernel is now 1–2% *slower* than mlx-lm, so `MAX_T=256` stays: stock runs above 256.
+   - Whole-model chunks (Qwen3): 32 → 1.83×, 64 → 1.37×, 128 → 1.19×, 256 → 1.09×.
+   - gpt-oss: 32 → 1.52×, 64 → 1.28×.
+   - The README layer table now uses the reproduction-run values.
+3. **DeepSeek quality numbers were not saved, and the README overstated quality.**
+   - `quality_check` now writes JSON (`runs/e2e_dsv2_quality.json`); the re-run reproduced the numbers exactly.
+   - The README now says "PPL within 0.1%; top-1 agreement with fp32 as high or higher". On DeepSeek our PPL is 0.1% further from fp32.
+   - The e2e JSON now records `tokens_identical` and `first_diff`: DeepSeek 225/225 (`runs/e2e_dsv2_plain_r6.json`, +7.2%).
+4. **Over-claims softened:**
+   - "locality explains the smaller gain" is now a hypothesis;
+   - the "~45%" locality figure is qualified per model;
+   - the context table header is corrected;
+   - rounding is fixed (+33.5% / +63.5%, 93%).
+5. **Guard added:** the DeepSeek patch asserts that `sharding_group` is None, since tensor-parallel is not supported.
+
+The audit verified as sound:
+- the round-6 kernel maths for bf16/fp16;
+- the xfail of the historical kernel;
+- the DeepSeek patch matches stock;
+- the DeepSeek and context numbers match their JSONs;
+- the routing-trace claims;
+- the generate CLI;
+- the reproduction outputs.
 
 ## Open problems / next steps
 1. ~~Small-batch + skewed routing~~ → solved by `metal_q4_tiles_mma` (round 1). Remaining: gpt-oss (d % 128 ≠ 0) tail path, T=2 with uniform routing (round 3 running).

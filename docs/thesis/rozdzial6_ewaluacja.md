@@ -52,12 +52,12 @@ Przyspieszenie liczymy względem mlx-lm na kształtach Qwen3 (int4):
 
 | T | 16 | 32 | 64 | 128 | 256 | 512 |
 |---|---|---|---|---|---|---|
-| ślady rzeczywiste | 1,98 | 2,45 | 1,61 | 1,34 | 1,12 | 1,00 |
-| routing jednostajny | 1,33 | 1,55 | 1,93 | 1,36 | 1,09 | 0,99 |
+| ślady rzeczywiste | 1,95 | 2,43 | 1,53 | 1,29 | 1,10 | 0,98 |
+| routing jednostajny | 1,27 | 1,53 | 1,87 | 1,36 | 1,09 | 0,99 |
 
-Nasze kernele wygrywają do T = 256. Przy T = 512 osiągamy parytet z posortowanym, grupowanym GEMM-em w MLX. Model analityczny z rozdziału 4 przewiduje, że warstwa przestaje być ograniczona pamięcią przy T* ≈ 157 dla routingu jednostajnego. Zmierzony przebieg jest z tym zgodny: zysk z ponownego użycia wag maleje, gdy warstwa staje się ograniczona obliczeniami.
+Nasze kernele wygrywają do T = 256. Przy T = 512 są o 1–2% wolniejsze od posortowanego, grupowanego GEMM-u w MLX, dlatego powyżej 256 tokenów używamy ścieżki standardowej. Model analityczny z rozdziału 4 przewiduje, że warstwa przestaje być ograniczona pamięcią przy T* ≈ 157 dla routingu jednostajnego. Zmierzony przebieg jest z tym zgodny: zysk z ponownego użycia wag maleje, gdy warstwa staje się ograniczona obliczeniami.
 
-W pełnym modelu fragment 32 tokenów, czyli krótki prefill lub mały batch, przetwarzamy 1,86× szybciej.
+W pełnym modelu fragment 32 tokenów, czyli krótki prefill lub mały batch, przetwarzamy 1,83× szybciej.
 
 ## 6.4. Pełny model (Qwen3-30B-A3B-4bit, mlx-lm)
 

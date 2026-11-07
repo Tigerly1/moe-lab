@@ -400,6 +400,10 @@ def run(s, x, idx, wts):
     F, D = gq.shape[1], dq.shape[1]
     base = [("T", x.dtype), ("S", gs.dtype), ("D", D), ("F", F), ("K", k), ("GS", GS)]
     if T > 1:
+        # The raw-code MMA path subtracts OFF*s*sum(x) with sum(x) taken from the unrounded input; for fp32
+        # inputs the MMA operands are rounded to half, so the cancellation error is amplified ~1024x
+        # (audit 3). Supported: bf16 (exact operands) and fp16. fp32 callers use the dispatcher's fallback.
+        assert x.dtype in (mx.bfloat16, mx.float16), "tiles_v2 T>1 path supports bf16/fp16 activations only"
         return _run_e(base, x, gq, gs, gb, uq, us, ub, dq, ds, db, idx, wts, T, k, F, D)
     h = _k1(inputs=[x, gq, gs, gb, uq, us, ub, idx], template=base + [("R", R_UP)],
             grid=(32 * F // R_UP, T * k, 1), threadgroup=(32 * SG_PER_TG, 1, 1),

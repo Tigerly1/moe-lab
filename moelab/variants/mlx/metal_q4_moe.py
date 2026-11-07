@@ -35,6 +35,6 @@ def run(s, x, idx, wts):
     if T == 1:
         return _v4.run(s, x, idx, wts)
     F, D = s["g"][0].shape[1], s["d"][0].shape[1]
-    if D % 128 == 0 and F % 128 == 0:
-        return _mma.run(s, x, idx, wts)
+    if D % 128 == 0 and F % 128 == 0 and x.dtype in (mx.bfloat16, mx.float16):
+        return _mma.run(s, x, idx, wts)   # fp32 activations -> scalar tiles (exact), see tiles_v2 note
     return _tb.run(s, x, idx, wts)

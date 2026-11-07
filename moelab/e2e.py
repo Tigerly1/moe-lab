@@ -75,6 +75,7 @@ def _patch_deepseek(model, mod):
         T = x.size // x.shape[-1]
         if T > MAX_T or not getattr(cls, "_use_variant", False):
             return stock(self, x)
+        assert getattr(self, "sharding_group", None) is None, "tensor-parallel DeepSeek MoE not supported by the patch"
         inds, scores = self.gate(x)
         k = inds.shape[-1]
         y = mod.run(self._variant_state, x.reshape(T, -1), inds.reshape(T, k),
@@ -156,9 +157,12 @@ def quality_check(model, tok, cls, variant_path):
             patch(model, mod)
         out[name] = teacher_forced(model, tok, cls, text, use)
         print(f"{name:8s} PPL {np.exp(out[name][0].mean()):.4f}")
+    res = {"ppl": {k: float(np.exp(v[0].mean())) for k, v in out.items()}, "pairs": {}}
     for a, b in (("stock", "fp32"), ("variant", "fp32"), ("stock", "variant")):
         (na, ta), (nb, tb) = out[a], out[b]
+        res["pairs"][f"{a}_vs_{b}"] = {"top1_agreement": float((ta == tb).mean()), "mean_abs_dnll": float(np.abs(na - nb).mean())}
         print(f"{a:7s} vs {b:7s}: top-1 agreement {100 * (ta == tb).mean():6.2f}%  mean |dNLL| {np.abs(na - nb).mean():.4f}")
+    return res
 
 
 def verify_bench(model, tok, cls, chunk, rounds=3):
@@ -212,7 +216,10 @@ def main():
     cls, n = patch(model, load_variant(a.variant))
     print(f"patched {n} MoE blocks with {a.variant}")
     if a.quality:
-        return quality_check(model, tok, cls, a.variant)
+        q = quality_check(model, tok, cls, a.variant)
+        if a.out:
+            json.dump({"args": vars(a), **q}, open(a.out, "w"), indent=1)
+        return
     if a.verify_chunks:
         out = [verify_bench(model, tok, cls, c) for c in a.verify_chunks]
         if a.out:
@@ -242,6 +249,7 @@ def main():
     print(f"speedup {v / s:.3f}x | greedy tokens identical: {same}/{len(outs['stock'])} (first diff at {first_diff})")
     if a.out:
         json.dump({"args": vars(a), "stock": res["stock"], "variant": res["variant"], "speedup": v / s,
+                   "tokens_identical": int(same), "first_diff": first_diff,
                    "len_stock": len(outs["stock"]), "len_variant": len(outs["variant"])}, open(a.out, "w"), indent=1)
 
 

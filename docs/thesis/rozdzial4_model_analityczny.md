@@ -93,7 +93,7 @@ Sąsiednie tokeny dzielą 41–50% ekspertów. Przy losowym routingu byłoby to 
 - U(8) wynosi 27–30, wobec 34,9 w modelu jednostajnym;
 - popularność ekspertów jest niemal równomierna.
 
-Lokalność routingu zależy więc od modelu. Zysk z ponownego użycia wag jest proporcjonalnie mniejszy, co potwierdzają pomiary end-to-end (§6.4c).
+Lokalność routingu zależy więc od modelu. Hipoteza, że zysk z ponownego użycia wag maleje wraz z lokalnością, jest zgodna z wynikiem dla 16 tokenów (§6.4c), ale nie jest rozstrzygnięta. Przy 32 tokenach DeepSeek zyskuje więcej niż gpt-oss, a modele różnią się też kształtem, atencją i formatem kwantyzacji.
 
 **Wniosek 2.** Kernel czytający wagi osobno dla każdej pary (token, slot) przenosi `T·k / U(T)` razy więcej danych niż potrzeba. Dla T = 8 kolejnych tokenów to około 2,3×, a dla T = 16 około 3,4×. Tak wygląda faza weryfikacji w dekodowaniu spekulatywnym. W tym reżimie szybki kernel MoE musi grupować sloty według eksperta, a nie zwiększać przepustowość pojedynczego GEMV.
 
