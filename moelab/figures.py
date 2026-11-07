@@ -124,6 +124,31 @@ def mxfp4():
     save(fig, "mxfp4_speedup")
 
 
+def roofline_measured():
+    """Measured points on the M4 Pro roofline (Qwen3 shape, int4 g64, uniform routing).
+    Bytes use the uniform-routing U(T); peaks are measured: ~250 GB/s read, ~6.2 TFLOPS simdgroup MMA."""
+    from . import roofline as rl
+    from .shapes import SHAPES
+    sh = SHAPES["qwen3-30b-a3b"]
+    BW, P = 250e9, 6.2e12
+    pts = {"mlx-lm": [], "nasz kernel": []}
+    for x in R("crossover_q4_qwen3_uniform.json")["summary"]:
+        T = x["T"]; fl = rl.flops(T, sh.d, sh.f, sh.k); by = rl.bytes_moved(T, sh.d, sh.f, sh.E, sh.k, 4.5)
+        pts["mlx-lm"].append((fl / by, fl / (x["A_us"] * 1e-6) / 1e12, T))
+        pts["nasz kernel"].append((fl / by, fl / (x["B_us"] * 1e-6) / 1e12, T))
+    ai = np.logspace(-0.5, 3, 200)
+    fig, ax = plt.subplots(figsize=(5.6, 3.6))
+    ax.plot(ai, np.minimum(ai * BW, P) / 1e12, color=INK, lw=1.2, label="dach: 250 GB/s, 6,2 TFLOPS")
+    for (lab, v), col in zip(pts.items(), (MUTED, ACC)):
+        ax.plot([p[0] for p in v], [p[1] for p in v], "o-", ms=4, color=col, label=lab)
+    for a_, y, T in pts["nasz kernel"]:
+        ax.annotate(f"T={T}", (a_, y), textcoords="offset points", xytext=(4, -10), fontsize=7, color=MUTED)
+    ax.set_xscale("log"); ax.set_yscale("log"); ax.set_xlabel("intensywność arytmetyczna (FLOP/B)")
+    ax.set_ylabel("TFLOP/s"); ax.set_title("Qwen3-30B-A3B, int4, routing jednostajny, M4 Pro", fontsize=10, color=INK)
+    ax.legend(fontsize=8, loc="lower right")
+    save(fig, "roofline_measured")
+
+
 if __name__ == "__main__":
-    for f in (speedup_vs_T, unique_experts, per_layer, sustained, verify_bench, ablation, mxfp4):
+    for f in (speedup_vs_T, unique_experts, per_layer, sustained, verify_bench, ablation, mxfp4, roofline_measured):
         f()
