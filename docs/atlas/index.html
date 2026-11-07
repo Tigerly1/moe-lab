@@ -69,14 +69,14 @@ a{color:var(--accent)}
   <div class="eyebrow">Lab notebook · Apple M4 Pro · 2026-11-07</div>
   <h1>MoE Kernel Atlas</h1>
   <p class="lede">What we learned optimizing the Mixture-of-Experts layer of Qwen3-30B-A3B for LLM decoding on an Apple GPU: what was measured, what was refuted, and what is still open.</p>
-  <p class="hand">→ every number here comes from a measurement with a correctness gate. The one we got wrong (1.25×) has been corrected.</p>
+  <p class="hand">→ every number here comes from a measurement with a correctness gate. All headline numbers were reproduced in one clean run at 05:46 (scripts/reproduce_headline.sh). Two independent audits; every correction is documented.</p>
 </header>
 
 <div class="kpis">
   <div class="kpi"><b>+9.0%</b><span>end-to-end decode, Qwen3-30B-A3B-4bit, AC: 91.6 → 99.8 tok/s</span></div>
   <div class="kpi"><b>94–103%</b><span>of the 250 GB/s floor at T=1 with non-repeating routing (Qwen3, gpt-oss, Mixtral); mlx-lm: 77% on Qwen3</span></div>
-  <div class="kpi"><b>+45%</b><span>full-model verify step of 16 tokens, same text both arms (193 → 279 tok/s)</span></div>
-  <div class="kpi"><b>2 models</b><span>end-to-end gains on Qwen3-30B-A3B (int4) and gpt-oss-20b (MXFP4): +9.0% and +7.9% plain decode</span></div>
+  <div class="kpi"><b>+48%</b><span>full-model verify step of 16 tokens, Qwen3, same text both arms (195 → 289 tok/s); gpt-oss +70%</span></div>
+  <div class="kpi"><b>2 models</b><span>end-to-end gains on Qwen3-30B-A3B (int4) and gpt-oss-20b (MXFP4): +9.0% and +8.0% plain decode</span></div>
 </div>
 
 <section>
