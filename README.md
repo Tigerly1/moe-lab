@@ -58,6 +58,13 @@ Visual summary: `docs/atlas/index.html`. Night log: `docs/NIGHT_LOG.md`.
 .venv/bin/python -m moelab.e2e --quality                 # PPL: stock vs variant vs fp32
 ```
 
+## Use the kernels
+```bash
+.venv/bin/python -m moelab.generate --model mlx-community/Qwen3-30B-A3B-4bit --prompt "Hello" --compare
+.venv/bin/python -m moelab.generate --model mlx-community/gpt-oss-20b-MXFP4-Q8 --prompt "Hello" --compare
+```
+The first call JIT-compiles the Metal kernels (~0.4 s cold start).
+
 ## Lab workflow
 1. Click a variant to open its source in the editor.
 2. **Fork…** copies it under a new name.

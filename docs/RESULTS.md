@@ -426,6 +426,11 @@ The crossover pattern is the same as Qwen3.
 - **Historical kernel:** `metal_q4_tiles_mma` (round 1) is xfail on the tiny-scale test, with the reason documented. Production does not use it.
 - **Not adopted:** a faster variant (16 rows per threadgroup, +0.7%) fell below the keep threshold. It is saved on branch `autoresearch/int4-scales-r6-mr2`.
 
+### `moelab/generate.py`: use the kernels in mlx-lm
+- `python -m moelab.generate --model <repo> --prompt ... [--compare]` picks the kernel from the checkpoint format (Qwen3-MoE affine int4 → `metal_q4_moe`; gpt-oss MXFP4 → `metal_mxfp4_gptoss`).
+- **Example (Qwen3-30B-A3B-4bit, single run after warmup):** prompt ~30 tokens 171.6 → 213.8 tok/s, decode 94.3 → 103.1 tok/s.
+- **Limitation: cold start.** The custom Metal kernels are JIT-compiled on first use, adding about 0.4 s to the first request. The first unwarmed run measured 56 tok/s prompt throughput. Every benchmark in this document warms up first.
+
 ## Open problems / next steps
 1. ~~Small-batch + skewed routing~~ → solved by `metal_q4_tiles_mma` (round 1). Remaining: gpt-oss (d % 128 ≠ 0) tail path, T=2 with uniform routing (round 3 running).
 2. **Regime dispatcher:** v31 for T ≤ 16, sorted `gather_qmm` above. The crossover sits around T≈16–32 on Qwen3 (RQ1).
