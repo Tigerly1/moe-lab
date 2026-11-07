@@ -20,8 +20,9 @@ Production kernels:
 |---|---|---|---|---|
 | Qwen3-30B-A3B-4bit | 91.5 → **99.8 tok/s (+9.0%)** | +23% | +48% | +84% |
 | gpt-oss-20b-MXFP4 | 75.3 → **81.3 tok/s (+8.0%)** | +27% | +70% | +52% |
+| DeepSeek-V2-Lite-4bit (shared experts, MLA) | 126.9 → **135.9 tok/s (+7.1%)** | +14% | +34% | +64% |
 
-Every number in this section was reproduced in one clean run (`scripts/reproduce_headline.sh`, seeds 5000+, output in `runs/repro/`, 2026-11-07 05:46).
+Qwen3 and gpt-oss rows were reproduced in one clean run (`scripts/reproduce_headline.sh`, seeds 5000+, output in `runs/repro/`, 2026-11-07 05:46). The DeepSeek row was measured at 05:55 (`runs/e2e_dsv2_*.json`).
 
 - Quality: perplexity is unchanged; the kernels are as close to fp32 as stock or closer.
 - The verify step is what speculative decoding and small-batch serving run. On this setup, free-running speculative decoding with a 0.6B draft is itself slower than plain decoding (stock 72–77 vs 91.5 tok/s).

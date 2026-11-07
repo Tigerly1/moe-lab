@@ -28,6 +28,8 @@ Every number below is in `runs/*.json` and documented in `docs/RESULTS.md`. Time
 | 05:20 | Tiny-scale int4 test written first: production MMA path failed it (latent half-precision hazard) | → round 6 |
 | 05:30 | Autoresearch round 6: raw-code MMA + fp32 scale/bias, bf16 operands | exact for any scale; speed unchanged; full-model verify-16 +48%, chunk-32 +84% |
 | 05:40 | Real routing traces for gpt-oss-20b | same ~45% adjacent-token locality as Qwen3 (new measurement) |
+| 05:45 | `moelab.generate` CLI; `scripts/reproduce_headline.sh` run from scratch (seeds 5000+) | all headline numbers reproduced; 327 tests incl. full models |
+| 05:55 | Third real model: DeepSeek-V2-Lite (shared experts, MLA) | plain +7.1% (identical output), verify-16 +34%, chunk-32 +64%, quality equal |
 
 ## What to look at first
 1. `docs/atlas/index.html`, also published as a private artifact (link in the chat summary).

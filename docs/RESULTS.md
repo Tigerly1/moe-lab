@@ -444,6 +444,34 @@ All headline numbers were reproduced from scratch in one run. Output: `runs/repr
 | Qwen3 e2e: plain / verify 4 / 16 / 32 | +9.0% / +22.8% / +48.4% / +83.5% |
 | gpt-oss e2e: plain / verify 4 / 16 | +8.0% / +27.4% / +69.6% |
 
+### End-to-end #3: DeepSeek-V2-Lite (`mlx-community/DeepSeek-V2-Lite-Chat-4bit-mlx`, int4 g64, AC)
+- **Architecture:** 64 routed experts, top-6, plus 2 shared experts, d=2048, f=1408, MLA attention, first layer dense.
+- **Patch:** `e2e._patch_deepseek` keeps the stock MoEGate (greedy or group-limited top-k, routed scaling) and the stock shared experts. Only the routed SwitchGLU goes to `metal_q4_moe`.
+- **Tests:** tiny-model logit tests for both top-k methods (`tests/test_deepseek_patch.py`); full-model multi-token test (`MOE_SLOW=1`) passes.
+
+| mode | stock | ours | gain |
+|---|---|---|---|
+| plain decode, 512 max tokens × 3 (outputs identical, 225/225 tokens to EOS) | 126.9 tok/s | 135.9 tok/s | **+7.1%** |
+| verify chunk 1 | 102.0 | 108.3 | +6.2% |
+| verify chunk 4 | 184.8 | 210.0 | +13.7% |
+| verify chunk 16 | 257.4 | 343.6 | **+33.5%** |
+| verify chunk 32 | 324.8 | 531.0 | **+63.5%** |
+
+**Quality (teacher-forced, frozen corpus):**
+
+| path | PPL | top-1 agreement with fp32 |
+|---|---|---|
+| stock | 41.35 | 97.70% |
+| ours | 41.40 | 97.87% |
+| fp32 experts | 41.26 | — |
+
+**Three architectures with end-to-end gains:**
+- Qwen3-MoE: 128×8, no shared experts.
+- gpt-oss: 32×4, MXFP4, biases, clamped SwiGLU.
+- DeepSeek-V2: 64×6 + 2 shared, MLA.
+
+Plain decode gains +7–9% on all three; verify/batch steps of 16–32 tokens gain +33–84%.
+
 ## Open problems / next steps
 1. ~~Small-batch + skewed routing~~ → solved by `metal_q4_tiles_mma` (round 1). Remaining: gpt-oss (d % 128 ≠ 0) tail path, T=2 with uniform routing (round 3 running).
 2. **Regime dispatcher:** v31 for T ≤ 16, sorted `gather_qmm` above. The crossover sits around T≈16–32 on Qwen3 (RQ1).

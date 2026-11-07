@@ -9,7 +9,8 @@ import pytest
 
 SLOW = os.environ.get("MOE_SLOW") == "1"
 CASES = [("mlx-community/Qwen3-30B-A3B-4bit", "moelab/variants/mlx/metal_q4_moe.py"),
-         ("mlx-community/gpt-oss-20b-MXFP4-Q8", "moelab/variants/mlx/metal_mxfp4_gptoss.py")]
+         ("mlx-community/gpt-oss-20b-MXFP4-Q8", "moelab/variants/mlx/metal_mxfp4_gptoss.py"),
+         ("mlx-community/DeepSeek-V2-Lite-Chat-4bit-mlx", "moelab/variants/mlx/metal_q4_moe.py")]
 
 
 def _cached(repo):

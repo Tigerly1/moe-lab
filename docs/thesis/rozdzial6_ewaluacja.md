@@ -112,6 +112,22 @@ Porównujemy nasz kernel ze ścieżką mlx-lm skwantyzowaną w trybie `mxfp4`. F
 - przycięta funkcja SwiGLU (alpha = 1,702, limit 7, +1 na gałęzi liniowej);
 - skale E8M0 z rzeczywistego checkpointu. To one ujawniły błąd opisany w §7.6.
 
+## 6.4c. Trzeci pełny model: DeepSeek-V2-Lite (eksperci współdzieleni, MLA)
+
+| Tryb | mlx-lm (tok/s) | Nasz kernel (tok/s) | Zysk |
+|---|---|---|---|
+| dekodowanie (identyczne wyjście, 225/225 tokenów) | 126,9 | 135,9 | +7,1% |
+| krok weryfikacji, 4 tokeny | 184,8 | 210,0 | +13,7% |
+| krok weryfikacji, 16 tokenów | 257,4 | 343,6 | +33,5% |
+| krok weryfikacji, 32 tokeny | 324,8 | 531,0 | +63,5% |
+
+**Jakość.** Zgodność top-1 z referencją fp32 wynosi 97,87% dla naszego kernela i 97,70% dla mlx-lm. Perplexity: 41,40 dla naszego kernela, 41,35 dla mlx-lm i 41,26 dla fp32.
+
+**Wniosek dla RQ4.** Te same kernele dają zysk w trzech różnych architekturach MoE:
+- Qwen3-MoE;
+- gpt-oss: MXFP4, biasy, przycięta funkcja SwiGLU;
+- DeepSeek-V2: eksperci współdzieleni, MLA.
+
 ## 6.5. Do uzupełnienia
 
 - [ ] Ten sam zestaw pomiarów na GPU NVIDIA: Triton fused_moe i Marlin-MoE przez Modal (RQ4).
