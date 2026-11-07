@@ -13,7 +13,7 @@ Every number below is in `runs/*.json` and documented in `docs/RESULTS.md`. Time
 | 01:55 | Found the spec-decoding pitfall: diverging text changes draft acceptance | built `--verify-chunks` (acceptance-free) |
 | 02:00 | Frozen quality corpus; JAX backend (`ragged_dot` + Pallas GMM, TPU-style scalar prefetch) | correct on CPU (interpret); ready for Colab TPU |
 | 02:05 | Thesis drafts ch. 4–7 (Polish); figures from data (`moelab/figures.py`) | `docs/thesis/` |
-| 02:30 | Autoresearch round 3 (tiles, 3 models) | +4%; verified on **held-out** Qwen3-235B and Mixtral |
+| 02:30 | Autoresearch round 3 (tiles, 3 models) | +4%; verified on Qwen3-235B (clean held-out) and Mixtral (partially seen) |
 | 02:40 | Mixtral puzzle solved | implicit SLC reuse when same-expert slots run concurrently (dispatch order) |
 | 03:25 | Autoresearch round 4 (MXFP4, gpt-oss format) | score 1.40; exact FP4→half2 bit trick |
 | 03:55 | gpt-oss-20b end-to-end (agent), **real-checkpoint bug found**: E8M0 ≥ 129 overflowed a half scale in the MMA path | fixed, regression test, honest re-measurement (−8–11% at T≥16) |
@@ -30,7 +30,7 @@ Every number below is in `runs/*.json` and documented in `docs/RESULTS.md`. Time
 1. `docs/atlas/index.html`, also published as a private artifact (link in the chat summary).
 2. `README.md` "Headline result".
 3. `docs/RESULTS.md`: the full record, including every correction.
-4. `docs/thesis/`: drafts of chapters 4–7 (Polish), plus `fig/`.
+4. `docs/thesis/`: drafts of chapters 1–7 (Polish), plus `fig/`.
 
 ## Decisions waiting for you
 - Post the MLX issue #4509 comment? (draft: `docs/upstream/mlx_issue_4509_draft.md`)

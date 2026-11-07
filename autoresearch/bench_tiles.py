@@ -15,7 +15,7 @@ CAND, BASE = "moelab/variants/mlx/ar_tiles.py", "moelab/variants/mlx/mlxlm_switc
 CONFIGS = [("qwen3-30b-a3b", "trace", [2, 4, 8, 16]), ("olmoe-1b-7b", "uniform", [2, 4, 8]), ("deepseek-v2-lite", "uniform", [2, 4, 8])]
 
 def gate():
-    r = subprocess.run([PY, "-m", "pytest", "-q", "-x", "tests/test_mlx_variants.py", "-k", "ar_tiles"], cwd=ROOT, capture_output=True, text=True)
+    r = subprocess.run([PY, "-m", "pytest", "-q", "-x", "tests/test_mlx_variants.py", "tests/test_int4_small_scales.py", "-k", "ar_tiles"], cwd=ROOT, capture_output=True, text=True)
     if r.returncode:
         print(r.stdout[-3000:]); return "unit tests failed"
     code = f"""
