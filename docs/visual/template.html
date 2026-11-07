@@ -1,0 +1,136 @@
+<title>Kernele MoE na Metalu</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: one reading column; each idea = a figure first, two or three sentences under it. */
+:root {
+  --bg: #f6f7fa; --panel: #ffffff; --ink: #172033; --muted: #5a6478; --rule: #dde2ec;
+  --mem: #e08a1e; --accent: #2747b8; --alt: #7a8aa8; --zone: #eef0f5;
+  --b1: #c3cbdb; --b8: #7d93cf; --b32: #2747b8;
+  --display: "Bricolage Grotesque", "Avenir Next", system-ui, sans-serif;
+  --body: "Atkinson Hyperlegible", "Segoe UI", system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0f1420; --panel: #161d2d; --ink: #e6eaf3; --muted: #9aa4b8; --rule: #2a3347;
+  --mem: #f0a243; --accent: #8aa2ff; --alt: #6f7d99; --zone: #1b2335;
+  --b1: #3a4560; --b8: #5d74b8; --b32: #8aa2ff; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #0f1420; --panel: #161d2d; --ink: #e6eaf3; --muted: #9aa4b8; --rule: #2a3347;
+  --mem: #f0a243; --accent: #8aa2ff; --alt: #6f7d99; --zone: #1b2335;
+  --b1: #3a4560; --b8: #5d74b8; --b32: #8aa2ff; color-scheme: dark }
+body { background: var(--bg); color: var(--ink); font: 17px/1.6 var(--body); }
+main { max-width: 760px; margin: 0 auto; padding-block: 40px 80px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+h1, h2 { font-family: var(--display); text-wrap: balance; line-height: 1.15; }
+h1 { font-size: clamp(2rem, 5vw, 2.9rem); margin: 0 0 12px; letter-spacing: -0.01em; }
+h2 { font-size: 1.45rem; margin: 56px 0 10px; }
+.lede { font-size: 1.15rem; color: var(--muted); max-width: 62ch; margin: 0; }
+p { max-width: 65ch; }
+.kicker { font: 600 0.78rem var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--mem); margin-bottom: 10px; }
+.nums { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 28px 0 8px; }
+.num { background: var(--panel); border: 1px solid var(--rule); border-radius: 8px; padding: 14px 16px; min-width: 0; }
+.num b { display: block; font: 700 1.9rem/1.1 var(--display); color: var(--accent); font-variant-numeric: tabular-nums; }
+.num span { color: var(--muted); font-size: 0.9rem; }
+figure { margin: 18px 0 6px; background: var(--panel); border: 1px solid var(--rule); border-radius: 10px; padding: 14px; overflow-x: auto; }
+figure svg { display: block; width: 100%; min-width: 560px; height: auto; }
+figcaption { font-size: 0.88rem; color: var(--muted); margin-top: 6px; }
+code { font: 0.88em var(--mono); background: var(--zone); padding: 1px 5px; border-radius: 4px; }
+table { border-collapse: collapse; width: 100%; font-size: 0.95rem; }
+.tw { overflow-x: auto; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+th { font: 600 0.78rem var(--mono); letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); }
+a { color: var(--accent); }
+/* SVG classes (all colors from tokens) */
+svg text { fill: var(--ink); font-family: var(--body); }
+.tick { font-size: 12px; fill: var(--muted); font-variant-numeric: tabular-nums; }
+.lab { font-size: 13px; fill: var(--ink); }
+.val { font-size: 12.5px; font-weight: 700; fill: var(--ink); }
+.cap { font-size: 11.5px; fill: var(--muted); }
+.h { font: 700 14px var(--display); fill: var(--ink); }
+.big { font: 700 18px var(--display); fill: var(--mem); }
+.grid { stroke: var(--rule); stroke-width: 1; }
+.grid.strong { stroke: var(--muted); stroke-dasharray: 4 3; }
+.mem { fill: var(--mem); }
+.cmp { fill: var(--accent); }
+.box { fill: var(--zone); stroke: var(--rule); stroke-width: 1.2; }
+.box.acc { stroke: var(--accent); }
+.box.swap { fill: var(--zone); stroke: var(--mem); stroke-width: 2.4; }
+.boxt { font: 600 14px var(--body); fill: var(--ink); }
+.boxt.sm { font-size: 12.5px; }
+.exp { fill: var(--zone); stroke: var(--rule); }
+.exp.on { fill: var(--mem); stroke: var(--mem); }
+.edge { stroke: var(--muted); stroke-width: 1.4; fill: none; }
+.edge.faint { stroke: var(--alt); stroke-width: 1; opacity: 0.6; }
+.edge.mem { stroke: var(--mem); stroke-width: 1.6; }
+.edge.thick { stroke-width: 3.2; }
+.arrowhead { fill: var(--muted); }
+.lours { fill: none; stroke: var(--accent); stroke-width: 3; }
+.loursd { fill: var(--accent); }
+.lstock { fill: none; stroke: var(--alt); stroke-width: 2.4; stroke-dasharray: 6 4; }
+.lstockd { fill: var(--alt); }
+.lalt { fill: none; stroke: var(--mem); stroke-width: 2.4; }
+.laltd { fill: var(--mem); }
+.zone { fill: var(--zone); }
+.b1 { fill: var(--b1); } .b8 { fill: var(--b8); } .b32 { fill: var(--b32); }
+@media (max-width: 520px) { .nums { grid-template-columns: 1fr; } body { font-size: 16px; } }
+</style>
+
+<main>
+  <div class="kicker">Praca magisterska · Apple M4 Pro · MLX / Metal</div>
+  <h1>Jak przyspieszyliśmy modele MoE na Macu</h1>
+  <p class="lede">Krótko: przy wielu zapytaniach naraz ten sam ekspert był czytany z pamięci wiele razy. Teraz czytamy go raz. Przy 32 zapytaniach daje to 1,4–1,7× na pięciu popularnych modelach.</p>
+
+  <div class="nums">
+    <div class="num"><b>1,71×</b><span>Gemma-4, 32 zapytania naraz, benchmark mlx-lm</span></div>
+    <div class="num"><b>5 / 5</b><span>modeli szybszych w benchmarku samego mlx-lm</span></div>
+    <div class="num"><b>#2044</b><span><a href="https://github.com/ml-explore/mlx-lm/pull/2044">zgłoszenie do mlx-lm</a>, 411 testów zielonych</span></div>
+  </div>
+
+  <h2>1. Wąskie gardło to pamięć, nie obliczenia</h2>
+  <figure>{{FIG_WALL}}<figcaption>Generowanie jednego tokena to głównie czytanie wag. Gdyby GPU liczył nieskończenie szybko, i tak nie przekroczylibyśmy ~126 tok/s.</figcaption></figure>
+  <p>Z tego rachunku wynika cała reszta: żeby przyspieszyć, trzeba czytać mniej bajtów albo czytać je szybciej. Szybsze liczenie niewiele da.</p>
+
+  <h2>2. Czym jest warstwa MoE</h2>
+  <figure>{{FIG_MOE}}<figcaption>Każdy token używa tylko 8 ze 128 ekspertów. Dlatego model ma 30 mld parametrów, a na token czyta ok. 3 mld.</figcaption></figure>
+
+  <h2>3. Gdzie stock traci i co zmieniliśmy</h2>
+  <figure>{{FIG_READS}}<figcaption>Cztery zapytania w jednym kroku. Ekspert E1 jest potrzebny trzem tokenom. Stock czyta go trzy razy, my raz, a potem mnożymy przez wszystkie tokeny naraz sprzętowym MMA 8×8.</figcaption></figure>
+  <p>Przy 32 zapytaniach jest 256 par (token, ekspert), a ekspertów tylko 128, więc każdy jest potrzebny średnio dwa razy. Stock mlx-lm aż do 64 par czyta wagi osobno dla każdej pary. Nasz kernel najpierw układa pary w kafle według eksperta, potem czyta i dekoduje wagi raz na kafel.</p>
+
+  <h2>4. Jak blisko sufitu jesteśmy</h2>
+  <figure>{{FIG_FLOOR}}<figcaption>100% oznacza, że kernel tylko czyta wagi i nic więcej nie traci. Przy 32 tokenach stock spada do 50%, bo czyta te same wagi wielokrotnie.</figcaption></figure>
+  <p>Ten wykres mówi też, gdzie nie warto już szukać. Do T=16 jesteśmy na 85–100%, więc zapasu prawie nie ma. Luka zostaje przy T=32 (75%) i tam pracuje teraz agent w tle.</p>
+
+  <h2>5. Kiedy nasz kernel, a kiedy stock</h2>
+  <figure>{{FIG_LOAD}}<figcaption>Siatka pomiarów warstwy (<code>runs/r9/grid_q4_mma64.json</code>). Decyduje obciążenie T·k/E, czyli ile tokenów średnio trafia do jednego eksperta. Powyżej progu (24 dla dużych ekspertów) wywołujemy ścieżkę bit-identyczną ze stockiem, więc nigdy nie jesteśmy wolniejsi.</figcaption></figure>
+
+  <h2>6. Jedna łatka na wszystkie modele</h2>
+  <figure>{{FIG_UNI}}</figure>
+  <p>Na sześciu rodzinach modeli o różnych routerach logity zgadzają się ze stockiem co do bitu. To sprawdzamy, wstawiając w miejsce naszego kernela ścieżkę identyczną ze stockiem. Ten sam projekt trafił do zgłoszenia w mlx-lm.</p>
+
+  <h2>7. Wynik w narzędziu samego mlx-lm</h2>
+  <figure>{{FIG_UP}}<figcaption><code>mlx_lm benchmark</code>, gałąź <code>main</code> kontra nasze zgłoszenie, średnia z dwóch przejść. Pojedyncza rozmowa zyskuje mało (3–8%), bo tam już jesteśmy przy suficie pamięci. Wiele zapytań naraz zyskuje dużo.</figcaption></figure>
+
+  <h2>8. Jak znaleźliśmy lepsze rzeczy</h2>
+  <div class="tw"><table>
+    <tr><th>Krok</th><th>Co zrobiliśmy</th><th>Efekt</th></tr>
+    <tr><td>Cele z danych</td><td>Ranking pobrań mlx-community zamiast intuicji</td><td>Gemma-4 i Qwen3.6, najpopularniejsze lokalne MoE, dostały wsparcie</td></tr>
+    <tr><td>Mapa sufitu</td><td>Procent sufitu dla każdego T</td><td>Wiemy, gdzie nie ma po co szukać (T ≤ 16)</td></tr>
+    <tr><td>Czytanie anomalii</td><td>Gemma miała 1,25×, inne modele 1,5×; zmierzyliśmy warstwę osobno</td><td>Za ostry warunek w dyspozytorze; po poprawce 1,70×</td></tr>
+    <tr><td>Szybkie odrzucanie</td><td>Prefill, kernele 8-bitowe: najpierw rachunek</td><td>Najwyżej kilka procent zysku, więc nie pisaliśmy kodu</td></tr>
+  </table></div>
+
+  <h2>9. Błędy złapane przed ogłoszeniem</h2>
+  <div class="tw"><table>
+    <tr><th>Błąd</th><th>Fałszywy wynik</th><th>Jak złapany</th></tr>
+    <tr><td>MLX liczy leniwie; pomiar ewaluował tylko ostatnie wywołanie</td><td>1000+ GB/s</td><td>Fizycznie niemożliwe, więc to błąd pomiaru</td></tr>
+    <tr><td>Te same wagi w każdym wywołaniu siedziały w cache SLC</td><td>~300 GB/s</td><td>Ponad sufit; teraz inny routing w każdym wywołaniu</td></tr>
+    <tr><td>A/B w mlx-lm ładował ten sam kod w obu ramionach</td><td>„brak zysku”</td><td>Identyczne liczby; teraz skrypt wypisuje ścieżkę importu</td></tr>
+    <tr><td>Perplexity modelu instruktażowego na surowym tekście</td><td>PPL ~300</td><td>Test na tekście w rozkładzie samego modelu</td></tr>
+    <tr><td>Tolerancja logitów na małych losowych modelach</td><td>Fałszywy alarm</td><td>Test dokładny, potwierdzony mutacją</td></tr>
+  </table></div>
+
+  <h2>10. Co dalej</h2>
+  <p>T=32 (ostatnia większa luka, agent w tle), pomiar na NVIDIA po wynajęciu GPU (skrypt gotowy), drugi Mac (M2) oraz poprawka serwera z pustym promptem jako osobne zgłoszenie. Pełny opis tekstowy: <code>docs/WYJASNIENIE.md</code>. Kod: <a href="https://github.com/Tigerly1/moe-lab">github.com/Tigerly1/moe-lab</a>.</p>
+</main>
