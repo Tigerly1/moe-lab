@@ -68,13 +68,13 @@ Porównujemy nasz kernel ze ścieżką mlx-lm skwantyzowaną w trybie `mxfp4`. F
 
 | Kształt | T = 1 | T = 4 | T = 8 | T = 16 | T = 32 |
 |---|---|---|---|---|---|
-| gpt-oss-20b | 1,16 | 1,29 | 1,50* | 1,56* | – |
-| Qwen3-30B-A3B (ślady) | 1,26 | 1,54 | 1,64* | 1,89* | 2,15* |
+| gpt-oss-20b | 1,16 | 1,29 | 1,50* | 1,60* | – |
+| Qwen3-30B-A3B (ślady) | 1,27 | 1,53 | 1,73* | 2,00* | 2,34* |
 | gpt-oss-120b (spoza strojenia) | 1,17 | 1,14 | 1,16* | 1,24* | – |
 | Mixtral-8x7B (spoza strojenia) | 1,05 | 1,39 | 1,77* | – | – |
 | DeepSeek-V2-Lite (spoza strojenia) | 1,18 | 1,25 | 1,34* | 1,38* | – |
 
-\* Pomiar wykonany po poprawce przepełnienia skali w ścieżce MMA (§7.6).
+\* Pomiar po poprawkach przepełnienia skali (§7.6); w rundzie 5 skala E8M0 jest stosowana w fp32 do częściowej sumy każdej 32-elementowej grupy.
 
 **Koszt dekodowania.** Wartości FP4 dekodujemy dokładnie, jedną operacją bitową dla pary wartości do typu `half2`. Kosztuje to tyle samo co dekodowanie int4 affine. Format nie ma członu bias i nie wymaga przeskalowania x, więc kernel MXFP4 jest szybszy od kernela int4 mniej więcej w stosunku liczby bajtów (4,25 wobec 4,5 bitu).
 
@@ -86,9 +86,9 @@ Porównujemy nasz kernel ze ścieżką mlx-lm skwantyzowaną w trybie `mxfp4`. F
 
 | Tryb | mlx-lm (tok/s) | Nasz kernel (tok/s) | Zysk |
 |---|---|---|---|
-| dekodowanie, 512 tokenów | 75,5 | 81,2 | +7,6% |
-| krok weryfikacji, 4 tokeny | 125,9 | 161,6 | +28,4% |
-| krok weryfikacji, 16 tokenów | 174,8 | 287,7 | +64,6% |
+| dekodowanie, 512 tokenów | 75,5 | 81,5 | +7,9% |
+| krok weryfikacji, 4 tokeny | 125,9 | 160,4 | +27,4% |
+| krok weryfikacji, 16 tokenów | 174,8 | 296,4 | +69,5% |
 
 **Jakość (teacher forcing).** Nasz kernel jest bliższy referencji fp32 niż ścieżka mlx-lm:
 - zgodność top-1 z fp32: 92,3% wobec 90,5%;
