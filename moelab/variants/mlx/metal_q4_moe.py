@@ -1,7 +1,7 @@
 """Production dispatcher (regime-adaptive), int4 affine g64 MoE experts on Apple GPUs.
 
 T == 1                      -> metal_q4_decode_v4 (GEMV at ~95-100% of measured bandwidth)
-T > 1, d,f % 128 == 0       -> metal_q4_tiles_mma (expert tiles, simdgroup 8x8 MMA, weight reuse)
+T > 1, d,f % 128 == 0       -> metal_q4_tiles_v2 (expert tiles, 8x8 MMA for >=3 slots, scalar 2-slot, LPR down; round 3)
 T > 1, otherwise (gpt-oss)  -> metal_q4_tiles_b   (expert tiles, scalar)
 All three share the mx.quantize state layout, so prepare() is done once.
 """
@@ -16,7 +16,7 @@ BITS, GS = 4, 64
 W_BITS = BITS + 32 / GS
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _v4 = load_variant(os.path.join(_HERE, "metal_q4_decode_v4.py"))
-_mma = load_variant(os.path.join(_HERE, "metal_q4_tiles_mma.py"))
+_mma = load_variant(os.path.join(_HERE, "metal_q4_tiles_v2.py"))
 _tb = load_variant(os.path.join(_HERE, "metal_q4_tiles_b.py"))
 
 

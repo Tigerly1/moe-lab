@@ -1,0 +1,27 @@
+{
+ "args": {
+  "model": "mlx-community/Qwen3-30B-A3B-4bit",
+  "variant": "moelab/variants/mlx/metal_q4_moe.py",
+  "tokens": 512,
+  "rounds": 3,
+  "quality": false,
+  "draft": null,
+  "num_draft": 3,
+  "max_t": 16,
+  "out": "runs/e2e_final_plain_v2.json",
+  "verify_chunks": null
+ },
+ "stock": [
+  91.65100650640737,
+  91.60491293058472,
+  91.61449637422736
+ ],
+ "variant": [
+  99.8012113859181,
+  99.94280047103058,
+  99.84661015776088
+ ],
+ "speedup": 1.0898560174353515,
+ "len_stock": 512,
+ "len_variant": 512
+}

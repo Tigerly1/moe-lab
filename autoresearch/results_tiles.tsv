@@ -1,0 +1,6 @@
+commit	score	per_point	status	description
+2c2568a	1.2639	qwen3T2=1.201 qwen3T4=1.350 qwen3T8=1.619 qwen3T16=1.852 olmoeT2=1.032 olmoeT4=1.137 olmoeT8=1.144 deepseekT2=1.072 deepseekT4=1.166 deepseekT8=1.275	keep	baseline tiles_mma
+8371ff4	1.2975	qwen3T2=1.230 qwen3T4=1.381 qwen3T8=1.663 qwen3T16=1.899 olmoeT2=1.027 olmoeT4=1.151 olmoeT8=1.185 deepseekT2=1.116 deepseekT4=1.204 deepseekT8=1.340	discard	LPR small down + dual-token 2-slot tiles (run 1 of 2; ci 0.0387)
+8371ff4	1.2959	qwen3T2=1.229 qwen3T4=1.383 qwen3T8=1.664 qwen3T16=1.902 olmoeT2=1.027 olmoeT4=1.151 olmoeT8=1.182 deepseekT2=1.108 deepseekT4=1.206 deepseekT8=1.329	discard	same, re-run (mean 1.2967 < 1.2639+0.0386)
+db5b529	1.3156	qwen3T2=1.248 qwen3T4=1.437 qwen3T8=1.739 qwen3T16=1.998 olmoeT2=1.029 olmoeT4=1.149 olmoeT8=1.181 deepseekT2=1.112 deepseekT4=1.204 deepseekT8=1.334	keep	LPR small down + dual-token 2-slot tiles + per-shape down SGK=LPR/8 (ci 0.0389)
+0920943	1.3256	qwen3T2=1.277 qwen3T4=1.441 qwen3T8=1.753 qwen3T16=2.014 olmoeT2=1.032 olmoeT4=1.151 olmoeT8=1.185 deepseekT2=1.136 deepseekT4=1.208 deepseekT8=1.334	discard	generated n-slot scalar paths + T<=2 v4 per-slot path (+0.010, ci 0.0418)
