@@ -1,0 +1,9 @@
+{
+ "model": "mlx-community/DeepSeek-V2-Lite-Chat-4bit-mlx",
+ "token_layers": 13312,
+ "stock_differs_from_exact": 9,
+ "of_which_bf16_ties": 9,
+ "fix_differs_from_exact_beyond_logit_ties": 0,
+ "router_tail_ms_stock": 0.38897899503353983,
+ "router_tail_ms_fix": 0.3944795025745407
+}

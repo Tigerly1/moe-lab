@@ -1,0 +1,12 @@
+{
+ "experts_stock_us": 10.31145825254498,
+ "experts_ours_us": 6.62762499996461,
+ "router_stock_us": 2.5151977461064234,
+ "router_fused_us": 2.078958503261674,
+ "per_token_48_layers_ms": {
+  "experts_stock_us": 0.49494999612215906,
+  "experts_ours_us": 0.31812599999830127,
+  "router_stock_us": 0.12072949181310833,
+  "router_fused_us": 0.09979000815656036
+ }
+}

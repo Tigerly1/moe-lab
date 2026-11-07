@@ -1,0 +1,40 @@
+{
+ "args": {
+  "model": "mlx-community/Qwen3-30B-A3B-4bit",
+  "variant": "moelab/variants/mlx/metal_q4_moe.py",
+  "tokens": 256,
+  "rounds": 3,
+  "quality": false,
+  "draft": null,
+  "num_draft": 3,
+  "max_t": 256,
+  "out": "runs/r8/cpu4_fused.json",
+  "fused_router": true,
+  "context": 0,
+  "verify_chunks": null
+ },
+ "stock": [
+  80.27128767858366,
+  82.98875688307004,
+  83.32139477707543
+ ],
+ "variant": [
+  96.5509301685749,
+  96.51264652569333,
+  96.40257413720467
+ ],
+ "speedup": 1.1629605039352289,
+ "tokens_identical": 6,
+ "first_diff": 2,
+ "len_stock": 256,
+ "len_variant": 256,
+ "guard": {
+  "key": "Apple M4 Pro|ac",
+  "probe_ref_gbs": 245.15067332765682,
+  "probe_min_gbs": 239.1763030071875,
+  "probe_ratio": 0.9756298025235922,
+  "status": "ok",
+  "contended": false,
+  "history": 40
+ }
+}

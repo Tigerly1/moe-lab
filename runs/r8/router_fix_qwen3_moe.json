@@ -1,0 +1,9 @@
+{
+ "model": "mlx-community/Qwen3-30B-A3B-4bit",
+ "token_layers": 24576,
+ "stock_differs_from_exact": 0,
+ "of_which_bf16_ties": 0,
+ "fix_differs_from_exact_beyond_logit_ties": 0,
+ "router_tail_ms_stock": 0.6496874993899837,
+ "router_tail_ms_fix": 0.8059374813456088
+}
