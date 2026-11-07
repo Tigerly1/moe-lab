@@ -49,9 +49,30 @@
   - a portability section comparing TPU, H100 and M4
 - **Write-up:** blog post in scaling-book style, then arXiv and a workshop (ES-FoMo @ ICML, MLSys workshops, EuroMLSys).
 
+## Status (2026-11-07, morning)
+| RQ | status | evidence |
+|---|---|---|
+| RQ1 regime crossover | **partial** | T-sweeps on 3 shapes; dispatcher picks the GEMV kernel at T=1 and tiles at T>1. Crossover vs `gather_qmm` sorted path (T≥64) not mapped yet |
+| RQ2 quantized decode on Metal | **done (Apple)** | 95–100% of measured bandwidth at T=1; 1.24× vs mlx-lm on Qwen3; mechanism = K%512 cliff + fusion |
+| RQ3 fusion value | **done (Apple)** | dispatch count matters little (GPU overlaps launches). Lane utilisation and reading each expert once matter a lot (T>1: up to 2.36×) |
+| RQ4 portability | **started** | JAX/Pallas port correct on CPU (interpret mode). NVIDIA (Triton/Modal) and TPU runs not done; a second Apple chip not tested |
+| RQ5 automated search | **done (3 rounds)** | autoresearch loops: round 1 found the MMA tile kernel; round 2 hit the bandwidth ceiling; round 3 running. Lessons on keep rules and noise |
+
+New findings worth a section or a workshop paper:
+1. Real-routing locality in Qwen3. Adjacent tokens share 43–47% of experts (7× random). U(T) is about half the uniform model.
+2. Free-running speculative-decoding tok/s is confounded by acceptance. A verify benchmark fixes this.
+3. Slope timing removes the fixed per-eval cost of MLX, which plain chained timing hides.
+
 ## Next concrete steps
-1. Fused int4 Metal GEMV variant (fork `metal_simd_gemv` → read packed uint32 + scales/biases).
-2. Sorted grouped GEMM on Metal with `simdgroup_matrix` for T ≥ 64.
-3. `modal setup` + deploy; first L4 run of `triton_fused_moe`, to confirm it is correct before tuning.
-4. Router/top-k + align kernels as separate benchmark stages (K1–K3).
-5. End-to-end tokens/s: patch `SwitchGLU` in mlx-lm with the chosen variant.
+1. **NVIDIA:**
+   - `modal setup`, then deploy, then run `triton_fused_moe` (correctness first).
+   - Port the expert-tile idea to Triton and compare against vLLM `fused_moe` and Marlin-MoE.
+2. **TPU:**
+   - Run `python -m moelab.jax_bench --no-interpret` on Colab or Kaggle TPU.
+   - Compare against `tokamax.ragged_dot` / Megablox.
+3. **Second Apple chip:** M1/M2/M3 from a friend or a cloud Mac. This decides whether the fusion half of the gain is M3/M4-specific.
+4. **Mixtral puzzle:** our gain grows with T at d=4096/f=14336 without expert reuse. Test the hypothesis that same-expert slots run concurrently and hit the cache: compare one_hot vs uniform per-slot time.
+5. **Upstream:**
+   - Comment on MLX #4509 with the K%512 ablation (draft in `docs/upstream/`).
+   - A minimal PR relaxing the `qmv_fast` alignment. This needs Xcode's Metal toolchain to build MLX.
+6. **Writing:** chapters 4, 6 and 7 are drafted in `docs/thesis/`. Figures come from `python -m moelab.figures`.
