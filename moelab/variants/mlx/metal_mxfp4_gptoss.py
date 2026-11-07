@@ -9,10 +9,9 @@ Differences:
   * activation selected by template constant ACT:
       ACT=0  standard SwiGLU  silu(g) * u                         (lab contract: prepare/run/dequant)
       ACT=1  gpt-oss clamped  g=min(g,7), u=clip(u,-7,7), g*sigmoid(1.702 g) * (u + 1)
-  * MMA path (T >= 8) scale fix: the base kernel folds 2^14 into a *half* group scale, which overflows
-    to inf for E8M0 bytes >= 129 (scale >= 4). gpt-oss down_proj has bytes up to 136 (~11% of groups >= 129),
-    the base kernel now splits the half scale into two half factors (hs2, fixed 2026-11-07) and applied as two exact power-of-two
-    multiplies -- bit-identical to the base kernel wherever the base did not overflow;
+  * E8M0 scales: handled entirely by the base kernel (round 5 applies the scale in fp32 per 32-group;
+    exact for bytes 1..254). History: a half-scale overflow at bytes >= 129 was found on this checkpoint
+    (gpt-oss down_proj reaches 136) and fixed; see docs/RESULTS.md;
   * new kernel-name prefix `mgo_` (MLX caches kernels by name).
 `state(sw)` builds the run() state directly from a (quantized, mode="mxfp4") SwitchGLU module.
 """

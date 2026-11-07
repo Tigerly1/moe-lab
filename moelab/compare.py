@@ -1,5 +1,11 @@
 """Rigorous A/B: interleaved rounds inside each process, several independent process
-launches, paired bootstrap 95% CI on the speedup (median_A / median_B).
+launches, 95% CI on the speedup (median_A / median_B).
+
+CI is HIERARCHICAL: resample launches (each launch = its own weights, inputs and routing windows),
+then rounds within each drawn launch. Rounds inside one launch share routing windows, so a plain
+per-round bootstrap understates the uncertainty for trace routing (audit 2, 2026-11-07).
+--seed-base picks the launch seeds; use one the tuning agents never saw (they used 0..2) for claims.
+--windows = number of distinct (x, routing) inputs rotated per launch.
 
     .venv/bin/python -m moelab.compare A.py B.py --shape qwen3-30b-a3b --dtype bfloat16 \
         --tokens 1 2 4 8 --launches 5 --rounds 6 --out runs/cmp.json
@@ -22,7 +28,7 @@ def child(a):
     states = [m.prepare(*w) for m in mods]
     mx.eval(states)
     for T in a.tokens:
-        inp = [be.make_inputs(sh, T, a.dtype, a.routing, seed=a.seed * 100 + s) for s in range(3)]
+        inp = [be.make_inputs(sh, T, a.dtype, a.routing, seed=a.seed * 100 + s) for s in range(a.windows)]
         x, idx, wts = inp[0]
         ref = be.reference(*(mods[1].dequant(states[1]) if hasattr(mods[1], "dequant") else w), x, idx, wts)
         ok = [be.errors(m.run(s, x, idx, wts), ref)["rel_fro"] for m, s in zip(mods, states)]
@@ -43,6 +49,21 @@ def boot_ci(a_us, b_us, n=4000, seed=0):
     return float(np.median(a_us) / np.median(b_us)), float(np.percentile(r, 2.5)), float(np.percentile(r, 97.5))
 
 
+def boot_ci_hier(rows, n=4000, seed=0):
+    """Resample launches with replacement, then rounds within each drawn launch."""
+    rng = np.random.default_rng(seed)
+    by = {}
+    for r in rows:
+        by.setdefault(r["launch"], []).append((r["A_us"], r["B_us"]))
+    groups = [np.array(v) for v in by.values()]
+    out = []
+    for _ in range(n):
+        pick = [groups[i] for i in rng.integers(0, len(groups), len(groups))]
+        samp = np.concatenate([g[rng.integers(0, len(g), len(g))] for g in pick])
+        out.append(np.median(samp[:, 0]) / np.median(samp[:, 1]))
+    return float(np.percentile(out, 2.5)), float(np.percentile(out, 97.5))
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("A"); ap.add_argument("B")
@@ -52,13 +73,16 @@ def main():
     ap.add_argument("--launches", type=int, default=5); ap.add_argument("--rounds", type=int, default=6)
     ap.add_argument("--seed", type=int, default=0); ap.add_argument("--child", action="store_true")
     ap.add_argument("--out", default=None)
+    ap.add_argument("--seed-base", type=int, default=0, help="launch L uses seed seed_base+L")
+    ap.add_argument("--windows", type=int, default=3, help="distinct (x, routing) inputs per launch")
     a = ap.parse_args()
     if a.child:
         return child(a)
     rows = []
     for L in range(a.launches):
         cmd = [sys.executable, "-m", "moelab.compare", a.A, a.B, "--child", "--shape", a.shape, "--dtype", a.dtype,
-               "--routing", a.routing, "--rounds", str(a.rounds), "--seed", str(L), "--tokens", *map(str, a.tokens)]
+               "--routing", a.routing, "--rounds", str(a.rounds), "--seed", str(a.seed_base + L),
+               "--windows", str(a.windows), "--tokens", *map(str, a.tokens)]
         out = subprocess.run(cmd, capture_output=True, text=True, check=True).stdout
         rows += [dict(json.loads(l), launch=L) for l in out.splitlines() if l.startswith("{")]
     summary = []
@@ -66,11 +90,15 @@ def main():
           f"{a.launches} launches x {a.rounds} rounds")
     for T in a.tokens:
         rs = [r for r in rows if r["T"] == T]
-        sp, lo, hi = boot_ci([r["A_us"] for r in rs], [r["B_us"] for r in rs])
+        sp, rlo, rhi = boot_ci([r["A_us"] for r in rs], [r["B_us"] for r in rs])
+        lo, hi = boot_ci_hier(rs)
+        per_launch = [float(np.median([r["A_us"] for r in rs if r["launch"] == L]) /
+                            np.median([r["B_us"] for r in rs if r["launch"] == L])) for L in sorted({r["launch"] for r in rs})]
         s = {"T": T, "A_us": float(np.median([r["A_us"] for r in rs])), "B_us": float(np.median([r["B_us"] for r in rs])),
-             "speedup_B_over_A": sp, "ci95": [lo, hi], "errA": rs[0]["errA"], "errB": rs[0]["errB"], "n": len(rs)}
+             "speedup_B_over_A": sp, "ci95": [lo, hi], "ci95_rounds_only": [rlo, rhi], "per_launch": per_launch,
+             "errA": rs[0]["errA"], "errB": rs[0]["errB"], "n": len(rs)}
         summary.append(s)
-        print(f"T={T:3d}  A {s['A_us']:8.1f}us  B {s['B_us']:8.1f}us  B is {sp:.3f}x  [95% CI {lo:.3f}-{hi:.3f}]  "
+        print(f"T={T:3d}  A {s['A_us']:8.1f}us  B {s['B_us']:8.1f}us  B is {sp:.3f}x  [95% CI {lo:.3f}-{hi:.3f}, by launch]  "
               f"err A {s['errA']:.1e} B {s['errB']:.1e}")
     if a.out:
         json.dump({"args": vars(a), "rows": rows, "summary": summary}, open(a.out, "w"), indent=1)

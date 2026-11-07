@@ -158,4 +158,4 @@ def bench_variant(mod, shape, tokens, dtype="float16", routing="uniform", hw="m4
         emit(res)
 
 
-TOL = {"float32": 1e-4, "float16": 5e-3, "bfloat16": 3e-2}
+TOL = {"float32": 1e-4, "float16": 5e-3, "bfloat16": 1e-2}  # bf16 tightened 3e-2 -> 1e-2 (audit 2)

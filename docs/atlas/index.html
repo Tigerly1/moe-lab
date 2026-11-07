@@ -74,7 +74,7 @@ a{color:var(--accent)}
 
 <div class="kpis">
   <div class="kpi"><b>+9.0%</b><span>end-to-end decode, Qwen3-30B-A3B-4bit, AC: 91.6 → 99.8 tok/s</span></div>
-  <div class="kpi"><b>98.5%</b><span>of the measured memory-bandwidth floor at T=1 (mlx-lm: 79%)</span></div>
+  <div class="kpi"><b>94–103%</b><span>of the 250 GB/s floor at T=1 with non-repeating routing (Qwen3, gpt-oss, Mixtral); mlx-lm: 77% on Qwen3</span></div>
   <div class="kpi"><b>+45%</b><span>full-model verify step of 16 tokens, same text both arms (193 → 279 tok/s)</span></div>
   <div class="kpi"><b>2 models</b><span>end-to-end gains on Qwen3-30B-A3B (int4) and gpt-oss-20b (MXFP4): +9.0% and +7.9% plain decode</span></div>
 </div>
@@ -102,13 +102,13 @@ a{color:var(--accent)}
 
 <section>
   <h2>2. How close are we to the hardware?</h2>
-  <p class="prose">The datasheet says 273 GB/s; a read-only kernel measured 240–250 GB/s (copy: 224). Per-call time comes from the slope of total time vs chain length (10 to 80 calls), which removes the 130–340 µs fixed cost of every eval. On that basis our T=1 kernel reads memory at the hardware limit on all three shapes. Stock mlx-lm reaches 79% on Qwen3.</p>
+  <p class="prose">The datasheet says 273 GB/s; a read-only kernel measured 240–250 GB/s (copy: 224). Per-call time comes from the slope of total time vs chain length (10 to 80 calls), which removes the 130–340 µs fixed cost of every eval. With 80 non-repeating routings (no cache reuse between calls), our T=1 kernel reads at 94% of the floor on Qwen3 and at the hardware limit on gpt-oss and Mixtral. Stock mlx-lm reaches 77% on Qwen3.</p>
   <div class="tbl"><table>
-    <thead><tr><th>T=1, bf16, int4 g64, slope timing</th><th>floor @250 GB/s</th><th>mlx-lm</th><th>ours (v4)</th><th>ours / floor</th><th>speedup</th></tr></thead>
+    <thead><tr><th>T=1, bf16, int4 g64, slope timing, 80 non-repeating routings</th><th>floor @250 GB/s</th><th>mlx-lm</th><th>ours (v4)</th><th>ours / floor</th><th>speedup</th></tr></thead>
     <tbody>
-      <tr><td>Qwen3-30B-A3B (2048×768, E128 k8)</td><td>85.1 µs</td><td>107.4 µs</td><td>86.4 µs</td><td>98.5%</td><td>1.244×</td></tr>
-      <tr><td>gpt-oss-20b (2880×2880, E32 k4)</td><td>224.2 µs</td><td>248.9 µs</td><td>225.8 µs</td><td>99.3%</td><td>1.102×</td></tr>
-      <tr><td>Mixtral-8x7B (4096×14336, E8 k2)</td><td>793.2 µs</td><td>801.8 µs</td><td>771.1 µs</td><td>102.9%</td><td>1.040×</td></tr>
+      <tr><td>Qwen3-30B-A3B (2048×768, E128 k8)</td><td>85.1 µs</td><td>110.4 µs</td><td>90.8 µs</td><td>93.7%</td><td>1.216×</td></tr>
+      <tr><td>gpt-oss-20b (2880×2880, E32 k4)</td><td>224.2 µs</td><td>253.7 µs</td><td>224.6 µs</td><td>99.8%</td><td>1.130×</td></tr>
+      <tr><td>Mixtral-8x7B (4096×14336, E8 k2)</td><td>793.2 µs</td><td>802.6 µs</td><td>772.8 µs</td><td>102.7%</td><td>1.039×</td></tr>
     </tbody></table></div>
   <p class="hand">Above 100% means the true ceiling is ~255–260 GB/s. At T=1 the only way left is fewer bytes.</p>
 </section>
@@ -142,7 +142,7 @@ a{color:var(--accent)}
   <p class="prose">A Karpathy-style <code>autoresearch</code> loop ran overnight. The agent may edit one file and is scored by a read-only evaluator (correctness gate plus interleaved A/B against real mlx-lm on real routing traces). Every kept or discarded experiment is a git commit. The winner groups the slots of one step by expert in a map prepass, then runs <code>simdgroup_matrix</code> 8×8 with an exact <code>q | 0x6400</code> int4→half dequant, so each expert's weights are read once per tile of up to 8 tokens.</p>
   <div class="fig">
     <div class="plot"><canvas id="cT" role="img" aria-label="Speedup vs T on real routing for v31, tiles scalar, tiles MMA">MMA: 1.16, 1.22, 1.36, 1.64, 1.87, 2.36 at T=1..32.</canvas></div>
-    <aside><p class="hand">Verified independently: 5 process launches × 6 interleaved rounds, bootstrap CIs within ±1–3%.</p><p class="hand">The agent under-sold it. It never measured T=32.</p></aside>
+    <aside><p class="hand">Re-verified with seeds the agent never saw, 8 routing windows per launch, CIs resampled by launch: T=8 1.75 [1.63, 1.83], T=16 2.02 [1.90, 2.13].</p><p class="hand">An earlier ±1–3% CI was too narrow (audit 2).</p></aside>
     <figcaption>Speedup over the real mlx-lm SwitchGLU path, Qwen3 shapes, bf16, real routing traces.</figcaption>
   </div>
   <div class="tbl"><table>
@@ -159,23 +159,23 @@ a{color:var(--accent)}
   <p class="hand">Lesson: the keep rule used the baseline's noisy CI and threw away three good kernels. Rounds 2 and 3 use the candidate's own CI.</p>
   <p class="prose">Round 2 (T=1) found the GEMV is already at the bandwidth ceiling and gained 1.5% by keeping all 32 lanes busy in the down projection. Round 3 (T&gt;1, scored on three models) added +4%: the same lane trick for single-slot tiles, a scalar path for 2-slot tiles, and a per-shape K split. At T≥8 the tile kernel is now limited by MMA instruction count. Reuse turned a memory-bound problem into a compute-bound one.</p>
   <div class="tbl"><table>
-    <thead><tr><th>tiles_v2, verified 5×6 (incl. held-out shapes)</th><th>T=2</th><th>T=4</th><th>T=8</th><th>T=16</th><th>T=32</th></tr></thead>
+    <thead><tr><th>tiles_v2, verified 5×6 (Qwen3-235B is the only clean held-out shape)</th><th>T=2</th><th>T=4</th><th>T=8</th><th>T=16</th><th>T=32</th></tr></thead>
     <tbody>
       <tr><td>Qwen3-30B-A3B, real traces</td><td>1.25×</td><td>1.42×</td><td>1.72×</td><td>1.98×</td><td>2.44×</td></tr>
-      <tr><td>Mixtral-8x7B, uniform (held-out)</td><td>1.13×</td><td>1.39×</td><td>1.95×</td><td>–</td><td>–</td></tr>
-      <tr><td>Qwen3-235B-A22B, uniform (held-out)</td><td>1.05×</td><td>1.08×</td><td>1.13×</td><td>1.27×</td><td>–</td></tr>
+      <tr><td>Mixtral-8x7B, uniform (partially seen)</td><td>1.13×</td><td>1.39×</td><td>1.95×</td><td>–</td><td>–</td></tr>
+      <tr><td>Qwen3-235B-A22B, uniform (clean held-out)</td><td>1.05×</td><td>1.08×</td><td>1.13×</td><td>1.27×</td><td>–</td></tr>
       <tr><td>OLMoE-1B-7B, uniform</td><td>1.06×</td><td>1.17×</td><td>1.22×</td><td>1.36×</td><td>–</td></tr>
     </tbody></table></div>
 </section>
 
 <section>
   <h2>5b. Same idea, the gpt-oss format: MXFP4</h2>
-  <p class="prose">MXFP4 stores each weight as a 4-bit float (E2M1) with one power-of-two scale per 32 weights: 4.25 bits, no bias term. Round 4 of autoresearch ported both kernels to it. The key trick decodes two FP4 values into a <code>half2</code> with a single bit expression, exact including subnormals, and folds the leftover 2<sup>14</sup> into the scale. Every point below beats mlx-lm's own MXFP4 path, including three model shapes the agent never saw.</p>
+  <p class="prose">MXFP4 stores each weight as a 4-bit float (E2M1) with one power-of-two scale per 32 weights: 4.25 bits, no bias term. Round 4 of autoresearch ported both kernels to it. The key trick decodes two FP4 values into a <code>half2</code> with a single bit expression, exact including subnormals, and folds the leftover 2<sup>14</sup> into the scale. Every point below beats mlx-lm's own MXFP4 path, including shapes outside the MXFP4 tuning bench.</p>
   <p class="hand">Correction: the first version overflowed a half scale on real checkpoints (E8M0 ≥ 129, ~11% of gpt-oss down groups). It was found by running the real gpt-oss and fixed with a regression test. The first fix cost 8–11% at T ≥ 16. Round 5 then applied the scale in fp32 per 32-group (exact for every scale byte; it also caught a second overflow at bytes ≥ 241) and won most of that back. The chart shows round-5 numbers.</p>
   <div class="fig">
     <div class="plot"><canvas id="cM" role="img" aria-label="MXFP4 speedup vs T for gpt-oss-20b, Qwen3, gpt-oss-120b, Mixtral, DeepSeek-V2-Lite">Qwen3 traces: 1.26 to 2.42; gpt-oss-20b: 1.16 to 1.69.</canvas></div>
     <aside><p class="hand">Decoding FP4 costs about the same as int4: no bias term and no x prescale pay for the bit trick.</p><p class="hand">So MXFP4 is faster than int4 by roughly its byte ratio: Qwen3 T=1 at 106 vs 114 µs.</p></aside>
-    <figcaption>Speedup over mlx-lm SwitchGLU quantized with mode="mxfp4". Dashed lines are shapes held out from tuning. 5 launches × 6 rounds.</figcaption>
+    <figcaption>Speedup over mlx-lm SwitchGLU quantized with mode="mxfp4". Dashed lines are shapes not in the MXFP4 tuning bench; see labels for how clean each one is.</figcaption>
   </div>
 </section>
 
@@ -275,9 +275,9 @@ a{color:var(--accent)}
     charts.push(new Chart(document.getElementById('cM'),{type:'line',data:{datasets:[
       {label:'Qwen3-30B, traces',data:P([1,2,4,8,16,32],[1.265,1.412,1.530,1.727,1.996,2.336]),borderColor:c.accent,backgroundColor:c.accent},
       {label:'gpt-oss-20b',data:P([1,2,4,8,16],[1.161,1.156,1.285,1.501,1.603]),borderColor:c.warm,backgroundColor:c.warm},
-      {label:'gpt-oss-120b (held-out)',data:P([1,4,8,16],[1.168,1.135,1.164,1.240]),borderColor:c.warm,backgroundColor:c.warm,borderDash:[5,4]},
-      {label:'Mixtral (held-out)',data:P([1,4,8],[1.045,1.385,1.765]),borderColor:c.good,backgroundColor:c.good,borderDash:[5,4]},
-      {label:'DeepSeek-V2-Lite (held-out)',data:P([1,4,8,16],[1.184,1.248,1.343,1.384]),borderColor:c.muted,backgroundColor:c.muted,borderDash:[5,4]}]},
+      {label:'gpt-oss-120b (same expert shape)',data:P([1,4,8,16],[1.168,1.135,1.164,1.240]),borderColor:c.warm,backgroundColor:c.warm,borderDash:[5,4]},
+      {label:'Mixtral (partially seen)',data:P([1,4,8],[1.045,1.393,1.816]),borderColor:c.good,backgroundColor:c.good,borderDash:[5,4]},
+      {label:'DeepSeek-V2-Lite (seen in int4 rounds)',data:P([1,4,8,16],[1.192,1.216,1.340,1.417]),borderColor:c.muted,backgroundColor:c.muted,borderDash:[5,4]}]},
       options:Object.assign(base(c,'tokens per step T','speedup vs mlx-lm MXFP4 (×)',true),{parsing:false})}));
     charts.push(new Chart(document.getElementById('cV'),{type:'bar',data:{labels:['1','2','4','7','16'],datasets:[
       {label:'stock mlx-lm',data:[74.5,102.6,127.5,126.9,192.6],backgroundColor:c.muted,borderRadius:3},

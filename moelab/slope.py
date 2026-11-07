@@ -42,22 +42,24 @@ def main():
     ap.add_argument("--shape", default="qwen3-30b-a3b"); ap.add_argument("--dtype", default="bfloat16")
     ap.add_argument("--T", type=int, default=1); ap.add_argument("--routing", default="uniform")
     ap.add_argument("--variants", nargs="+", required=True)
+    ap.add_argument("--windows", type=int, default=80, help="distinct inputs; >= max chain so no expert-set repeats (audit 2)")
     a = ap.parse_args()
     sh = SHAPES[a.shape]
     w = be.make_weights(sh, a.dtype)
-    inp = [be.make_inputs(sh, a.T, a.dtype, a.routing, s) for s in range(3)]
+    inp = [be.make_inputs(sh, a.T, a.dtype, a.routing, 1000 + s) for s in range(a.windows)]
     res_us, res_icpt = fit(lambda x, i, ww: mx.zeros_like(x), inp)
     U = float(np.mean([len(np.unique(np.array(i[1]))) for i in inp]))
-    floor = roofline.bytes_moved(a.T, sh.d, sh.f, sh.E, sh.k, 4.5, unique=U) / 250e9 * 1e6
-    print(f"{a.shape} T={a.T} {a.routing}: floor@250GB/s {floor:.1f}us | residual-add-only slope {res_us:.1f}us (fixed {res_icpt:.0f}us)")
+    w_bits = 4.5  # default int4 g64; per-variant W_BITS below
+    print(f"{a.shape} T={a.T} {a.routing} windows={a.windows}: residual-add-only slope {res_us:.1f}us (fixed {res_icpt:.0f}us)")
     base = None
     for v in a.variants:
         m = be.load_variant(f"moelab/variants/mlx/{v}.py"); st = m.prepare(*w); mx.eval(st)
+        floor = roofline.bytes_moved(a.T, sh.d, sh.f, sh.E, sh.k, getattr(m, "W_BITS", w_bits), unique=U) / 250e9 * 1e6
         s, c = fit(lambda *z: m.run(st, *z), inp)
         net = s - res_us
         base = base or net
         print(f"  {v:22s} per-call {s:7.1f}us  minus residual {net:7.1f}us  fixed/eval {c:6.0f}us  "
-              f"{100 * floor / net:5.1f}% of floor  speedup {base / net:.3f}x")
+              f"floor {floor:6.1f}us  {100 * floor / net:5.1f}% of floor@250  speedup {base / net:.3f}x")
         del st
 
 

@@ -320,6 +320,51 @@ One layer-17 channel reaches about 40,000, which is close to the half range. The
 | gpt-oss-20b T=1 / 8 / 16 | 1.16 / 1.52 / 1.69 | – / 1.50 / 1.56 | **1.16 / 1.50 / 1.60** |
 | gpt-oss-20b e2e: plain / verify 4 / verify 16 | – | +7.6% / +28.4% / +64.6% | **+7.9% / +27.4% / +69.5%** |
 
+## Audit 2 (2026-11-07, ~05:00): independent review of all night claims, and the fixes
+
+The reviewer read code, re-ran tests and scripts, and spot-checked ~15 numbers against `runs/*.json`; all of them matched. **No cheating was found**: baselines are the real mlx-lm path, the variant skips no work, and verify_bench is fair. Problems found and how each was fixed:
+
+1. **Trace-routing CIs were far too narrow.**
+   - Rounds within one launch share the same routing windows, but the bootstrap treated them as independent.
+   - **Fix:** `compare.py` now reports a *hierarchical* CI (resample launches, then rounds), uses `--windows 8` per launch, and takes `--seed-base 1000`, seeds the tuning agents never saw (they used 0–2).
+   - Re-run (6 launches × 4 rounds × 8 windows): the point estimates hold, now with honest intervals.
+
+| real traces, fresh seeds | T=1 | T=2 | T=4 | T=8 | T=16 | T=32 |
+|---|---|---|---|---|---|---|
+| int4 dispatcher `metal_q4_moe` | 1.200 [1.19, 1.21] | 1.234 [1.22, 1.30] | 1.468 [1.42, 1.56] | **1.751 [1.63, 1.83]** | **2.019 [1.90, 2.13]** | **2.455 [2.40, 2.53]** |
+| MXFP4 `metal_mxfp4_moe` (r5) | 1.257 [1.25, 1.27] | 1.392 [1.35, 1.48] | 1.520 [1.49, 1.59] | 1.764 [1.68, 1.80] | 2.010 [1.90, 2.08] | 2.366 [2.32, 2.42] |
+
+2. **"Held-out" was overstated.**
+   - Only **Qwen3-235B** is clean (it first appears in verification).
+   - Mixtral was timed in round 2 (T=1) and studied in the "Mixtral puzzle". DeepSeek-V2-Lite was timed in rounds 2–3.
+   - gpt-oss-120b has the same per-expert shape as gpt-oss-20b.
+   - Fresh-seed results, uniform routing:
+
+| shape | status | T=1 | T=4 | T=8 | T=16 |
+|---|---|---|---|---|---|
+| Qwen3-235B, MXFP4 | clean held-out | 1.070 | 1.103 | 1.109 | 1.227 |
+| Qwen3-235B, int4 | clean held-out | 1.060 | 1.094 | 1.125 | 1.263 |
+| Mixtral, MXFP4 | partially seen | 1.045 | 1.393 | 1.816 | – |
+| DeepSeek-V2-Lite, MXFP4 | seen (int4 rounds) | 1.192 | 1.216 | 1.340 | 1.417 |
+
+3. **README quoted a pre-fix MXFP4 number** (Mixtral 1.92). Corrected to the round-5, fresh-seed value of 1.82.
+4. **T=1 "% of bandwidth" was inflated by cache reuse.**
+   - The timing chain rotated only 3 inputs, so expert sets recurred every 3rd call.
+   - **Fix:** `slope.py --windows 80` uses non-repeating routing. Output: `runs/slope_nonrepeating.txt`.
+   - Qwen3 int4 v4: **93.7%** of the 250 GB/s floor (was reported as 98.5%); speedup 1.216×.
+   - gpt-oss: 99.8%. Mixtral: 102.7%. Values above 100% are genuine and imply a true ceiling of ~257 GB/s.
+   - MXFP4 at T=1: Qwen3 90.8% (1.28× vs mlx-lm MXFP4), gpt-oss 98.5% (1.18×), Mixtral 102.4% (1.05×).
+5. **No real-model output check at T>1.**
+   - **Fix:** `tests/test_real_model_multitoken.py` (opt-in, `MOE_SLOW=1`) runs both full models with chunks T=4/8/16 through the patched blocks.
+   - Logits match stock: rel ≤ 0.08 per chunk (measured ~0.014–0.045), ≥85% top-1 agreement over 28 positions. Passes.
+   - gpt-oss quality was re-measured on the round-5 kernel: identical (PPL 179.63 vs stock 181.17 vs fp32 172.39).
+6. **Smaller items:**
+   - bf16 test tolerance tightened from 3e-2 to 1e-2; all 268 tests still pass.
+   - verify JSONs now record `max_t`.
+   - Stale `hs2` docstring removed.
+   - **Remaining limit:** the int4 `tiles_v2` MMA path forms dequantized weights in half. Scales below ~6e-8 would flush to zero; the real Qwen3 minimum is 8.6e-6, so this does not occur today.
+7. **Framing:** the README now states that free-running speculative decoding is itself slower than plain decoding on this setup; the verify-step gain applies to the verify step only.
+
 ## Open problems / next steps
 1. ~~Small-batch + skewed routing~~ → solved by `metal_q4_tiles_mma` (round 1). Remaining: gpt-oss (d % 128 ≠ 0) tail path, T=2 with uniform routing (round 3 running).
 2. **Regime dispatcher:** v31 for T ≤ 16, sorted `gather_qmm` above. The crossover sits around T≈16–32 on Qwen3 (RQ1).

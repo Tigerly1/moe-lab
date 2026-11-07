@@ -55,3 +55,20 @@ Każdy wynik agenta zweryfikowaliśmy niezależnie, z większą liczbą powtórz
 **Wpływ na wyniki.** Poprawność kosztuje 8–11% przyspieszenia przy T ≥ 16.
 
 **Wniosek metodyczny.** Bramka poprawności musi obejmować rozkłady wag z prawdziwych modeli, nie tylko wagi losowe.
+
+## 7.7. Zależność statystyczna pomiarów i „held-out”
+
+**Zbyt wąskie przedziały ufności.** Drugi niezależny audyt wykazał, że przy routingu ze śladów przedziały ufności były zbyt wąskie. Bootstrap traktował rundy jako niezależne, choć rundy w ramach jednego uruchomienia współdzielą te same okna routingu. Dla T = 8 przedział ±1% po poprawnym bootstrapie po uruchomieniach rozszerza się do [1,63, 1,83].
+
+**Poprawka metody:**
+- bootstrap hierarchiczny (najpierw uruchomienia, potem rundy);
+- 8 okien routingu na każde uruchomienie;
+- ziarna losowe, których agenty strojące nigdy nie widziały.
+
+Estymaty punktowe się utrzymały.
+
+**Kształty „held-out”.** Okazało się, że w pełni czysty jest tylko Qwen3-235B:
+- Mixtral i DeepSeek-V2-Lite pojawiały się wcześniej w benchmarkach strojenia;
+- gpt-oss-120b ma ten sam kształt eksperta co gpt-oss-20b.
+
+**Cache w łańcuchu pomiarowym.** Łańcuch pomiarowy obracał tylko 3 wejścia, przez co zestawy ekspertów powtarzały się co trzecie wywołanie i część odczytów trafiała do cache. Przy niepowtarzającym się routingu odsetek sufitu dla Qwen3 spada z 98,5% do 93,7%. Przyspieszenie zmienia się nieznacznie: z 1,24× na 1,22×.

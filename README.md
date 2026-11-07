@@ -9,28 +9,48 @@ python3 -m venv .venv && .venv/bin/pip install mlx mlx-lm numpy fastapi "uvicorn
 .venv/bin/uvicorn server.app:app --port 8765  # open http://localhost:8765
 ```
 
-## Headline result (M4 Pro, 2026-11-07, audit-corrected, AC power)
-Production kernel: `moelab/variants/mlx/metal_q4_moe.py`, a dispatcher over `metal_q4_decode_v4` (T=1) and `metal_q4_tiles_v2` / `metal_q4_tiles_b` (T>1).
+## Headline result (M4 Pro, 2026-11-07, after two independent audits, AC power)
+Production kernels:
+- `moelab/variants/mlx/metal_q4_moe.py` (int4 affine g64): v4 GEMV at T=1, expert-tile MMA at T>1;
+- `metal_mxfp4_moe.py` (MXFP4, the gpt-oss format), plus `metal_mxfp4_gptoss.py` (adds biases and the clamped SwiGLU).
 
-- **Plain decode, Qwen3-30B-A3B-4bit, mlx-lm:** 91.6 → **99.8 tok/s (+9.0%)**, with perplexity unchanged.
-- **gpt-oss-20b (MXFP4, second real model):** plain decode 75.5 → 81.5 tok/s (+7.9%); verify step of 4 / 16 tokens +27% / +70%; closer to fp32 than stock.
-- **Speculative-verify / small-batch step** (full model, fixed text, chunk of 4 / 7 / 16 tokens): **+23% / +34% / +45%**.
-- **MoE layer at T=1 vs real mlx-lm:**
-  - **1.24×** on Qwen3, 1.10–1.12× on gpt-oss, 1.04× on Mixtral (slope timing).
-  - Our kernel reads memory at **95–100% of the measured ~255 GB/s** hardware limit; MLX reaches 79% on Qwen3.
-- **MoE layer at T>1, real routing traces:** 1.72× at T=8, 1.98× at T=16, 2.44× at T=32. Held-out shapes: Mixtral 1.95× at T=8, Qwen3-235B 1.27× at T=16. Consecutive tokens share ~45% of experts, and the kernel reads each expert once per tile.
-- **MXFP4 (gpt-oss format):** `metal_mxfp4_moe` beats mlx-lm's MXFP4 path:
-  - 1.16× (gpt-oss) and 1.26× (Qwen3) at T=1;
-  - up to 2.34× at T=32 (round 5, exact for every E8M0 scale after two overflow bugs were found and fixed);
-  - held-out shapes (gpt-oss-120b, Mixtral, DeepSeek-V2-Lite) at 1.05–1.92×.
+**End to end (mlx-lm, real models):**
+
+| model | plain decode | verify step, 4 tokens | verify step, 16 tokens |
+|---|---|---|---|
+| Qwen3-30B-A3B-4bit | 91.6 → **99.8 tok/s (+9.0%)** | +23% | +45% |
+| gpt-oss-20b-MXFP4 | 75.5 → **81.5 tok/s (+7.9%)** | +27% | +70% |
+
+- Quality: perplexity is unchanged; the kernels are as close to fp32 as stock or closer.
+- The verify step is what speculative decoding and small-batch serving run. On this setup, free-running speculative decoding with a 0.6B draft is itself slower than plain decoding (stock 72–77 vs 91.5 tok/s).
+
+**MoE layer vs the real mlx-lm path** (bf16; fresh seeds; CIs resampled by launch):
+
+| | T=1 | T=8 (real traces) | T=16 (real traces) | T=32 (real traces) |
+|---|---|---|---|---|
+| int4 dispatcher, Qwen3 | 1.20 [1.19, 1.21] | 1.75 [1.63, 1.83] | 2.02 [1.90, 2.13] | 2.46 [2.40, 2.53] |
+| MXFP4, Qwen3 | 1.26 [1.25, 1.27] | 1.76 [1.68, 1.80] | 2.01 [1.90, 2.08] | 2.37 [2.32, 2.42] |
+
+- **Clean held-out shape (Qwen3-235B, uniform routing):** int4 1.06–1.26×, MXFP4 1.07–1.23×. Partially seen shapes: Mixtral up to 1.82× and DeepSeek-V2-Lite up to 1.42× (MXFP4).
+- **T=1 is at the memory wall.** With non-repeating routing our GEMV reads at 94% (Qwen3), 100% (gpt-oss) and ~103% (Mixtral) of 250 GB/s. mlx-lm reaches 77% on Qwen3.
 - **Mechanism at T=1:**
-  - About half the gain is MLX's qmv fast path requiring K % 512 == 0, which Qwen3 (K=768) and gpt-oss (2880) miss.
-  - The rest is fusion and full lane use.
+  - about half the gain comes from MLX's qmv fast path requiring K % 512 == 0, which Qwen3 (K=768) and gpt-oss (2880) miss;
+  - the rest from fusion and full lane use.
+- **Mechanism at T>1:**
+  - consecutive tokens share ~45% of their experts (real routing traces);
+  - the kernels group slots by expert and read each expert's weights once per tile (simdgroup 8×8 MMA);
+  - at T≥8 they become compute-bound (~80% of the measured 6.2 TFLOPS MMA issue rate).
 - **Not a clock boost:** 10-minute sustained runs and battery vs AC leave the ratio unchanged. Other Apple chips are untested.
-- **Corrections:**
-  - An earlier 1.25× claim was inflated by an unfair baseline; an independent audit caught it.
-  - Free-running speculative tok/s is confounded by draft acceptance, so we use the verify benchmark instead.
-  - Details: [docs/RESULTS.md](docs/RESULTS.md). Visual summary: `docs/atlas/index.html`.
+
+**Corrections made along the way** (all documented in [docs/RESULTS.md](docs/RESULTS.md)):
+- an unfair first baseline;
+- activations decaying to zero in the timing chain;
+- a speculative-decoding acceptance confound;
+- two MXFP4 scale-overflow bugs found on the real gpt-oss checkpoint;
+- CIs too narrow for trace routing;
+- overstated "held-out" labels and bandwidth percentages.
+
+Visual summary: `docs/atlas/index.html`. Night log: `docs/NIGHT_LOG.md`.
 
 ```bash
 .venv/bin/python -m moelab.e2e --tokens 256 --rounds 3   # tok/s, stock vs variant

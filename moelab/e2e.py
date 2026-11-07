@@ -155,7 +155,7 @@ def verify_bench(model, tok, cls, chunk, rounds=3):
     s, v = np.median(res["stock"]), np.median(res["variant"])
     print(f"verify chunk={chunk}: stock {s:.1f} tok/s  variant {v:.1f} tok/s  speedup {v / s:.3f}x  "
           f"({len(chunks)} steps, rounds {res})", flush=True)
-    return {"chunk": chunk, "stock": res["stock"], "variant": res["variant"], "speedup": v / s}
+    return {"chunk": chunk, "max_t": MAX_T, "variant_used": chunk <= MAX_T, "stock": res["stock"], "variant": res["variant"], "speedup": v / s}
 
 
 def main():
