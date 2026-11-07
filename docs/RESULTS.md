@@ -399,6 +399,18 @@ The crossover pattern is the same as Qwen3.
 - Absolute times rose ~2.5% on both sides (mild heating: stock 129.2 → 132.5 µs, ours 106.8 → 109.5 µs), so the ratio is unaffected.
 - This addresses the audit-2 note that the earlier sustained run used `tiles_mma`.
 
+### Real routing #2: gpt-oss-20b (E=32, top-4), the same three domains (`runs/routing_gptoss.npz`, `_stats.json`)
+| T | 1 | 2 | 4 | 8 | 16 | 32 |
+|---|---|---|---|---|---|---|
+| uniform E(1-(1-k/E)^T) | 4 | 7.5 | 13.2 | 21.0 | 28.2 | 31.6 |
+| T tokens from different sequences | 4 | 7.3 | 12.1 | 18.1 | 23.4 | 27.3 |
+| T consecutive tokens (English / code / Polish) | 4 | 6.1–6.3 | 8.5–9.5 | 12.2–13.4 | 15.7–17.8 | 18.9–21.4 |
+
+- **Locality:** adjacent tokens share 41–50% of experts, against 12.5% for random routing (3.3–4×).
+- **Skew:** the top 10% of experts take 32–42% of selections. Unlike Qwen3, almost no experts go unused (0.1–3.2 of 32).
+- **Generality:** two very different MoEs, Qwen3 (128×8) and gpt-oss (32×4), both show ~40–50% adjacent-token expert overlap. At T=8, a per-slot kernel reads 32 expert slots where ~13 suffice (gpt-oss), or 64 where ~28 suffice (Qwen3). Expert-reuse kernels pay off on both.
+- No published per-layer routing statistics for gpt-oss were found (research scan); this is a new measurement.
+
 ## Open problems / next steps
 1. ~~Small-batch + skewed routing~~ → solved by `metal_q4_tiles_mma` (round 1). Remaining: gpt-oss (d % 128 ≠ 0) tail path, T=2 with uniform routing (round 3 running).
 2. **Regime dispatcher:** v31 for T ≤ 16, sorted `gather_qmm` above. The crossover sits around T≈16–32 on Qwen3 (RQ1).

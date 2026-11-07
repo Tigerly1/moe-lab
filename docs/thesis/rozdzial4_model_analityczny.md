@@ -79,6 +79,15 @@ Na H100 granica ta leży o rząd wielkości wyżej. Ta sama architektura warstwy
 - **Lokalność czasowa:** sąsiednie tokeny dzielą 43–47% ekspertów. Przy losowym routingu byłoby to 6,2%.
 - **Skośność popularności:** 10% najpopularniejszych ekspertów obsługuje 42–59% wyborów.
 
+**Drugi model: gpt-oss-20b (E = 32, k = 4).**
+
+| T | 2 | 4 | 8 | 16 |
+|---|---|---|---|---|
+| U_unif | 7,5 | 13,2 | 21,0 | 28,2 |
+| U, kolejne tokeny | 6,1–6,3 | 8,5–9,5 | 12,2–13,4 | 15,7–17,8 |
+
+Sąsiednie tokeny dzielą 41–50% ekspertów. Przy losowym routingu byłoby to 12,5%. Wzorzec jest więc ten sam co w Qwen3, choć architektury są bardzo różne.
+
 **Wniosek 2.** Kernel czytający wagi osobno dla każdej pary (token, slot) przenosi `T·k / U(T)` razy więcej danych niż potrzeba. Dla T = 8 kolejnych tokenów to około 2,3×, a dla T = 16 około 3,4×. Tak wygląda faza weryfikacji w dekodowaniu spekulatywnym. W tym reżimie szybki kernel MoE musi grupować sloty według eksperta, a nie zwiększać przepustowość pojedynczego GEMV.
 
 ## 4.5. Weryfikacja modelu (do uzupełnienia)

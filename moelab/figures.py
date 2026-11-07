@@ -47,18 +47,18 @@ def speedup_vs_T():
     save(fig, "speedup_vs_T")
 
 
-def unique_experts():
-    s = R("routing_qwen3_stats.json")
+def unique_experts(stats="routing_qwen3_stats.json", name="unique_experts"):
+    s = R(stats)
     T = s["T"]
     cons = np.mean([v["consecutive"] for v in s["domains"].values()], axis=0)
     fig, ax = plt.subplots(figsize=(5.6, 3.4))
-    ax.plot(T, [8 * t for t in T], "--", color=BAD, label="sloty T·k (czytane per-slot)")
+    ax.plot(T, [s["k"] * t for t in T], "--", color=BAD, label="sloty T·k (czytane per-slot)")
     ax.plot(T, s["uniform"], ":", color=MUTED, label="model jednostajny")
     ax.plot(T, s["batched"], "-o", ms=3, color=WARM, label="tokeny z różnych sekwencji")
     ax.plot(T, cons, "-o", ms=3, color=ACC, label="kolejne tokeny (ślady)")
-    ax.set_xscale("log", base=2); ax.set_xticks(T, [str(t) for t in T]); ax.set_ylim(0, 140); ax.set_xlabel("T"); ax.set_ylabel("unikalni eksperci U(T)")
+    ax.set_xscale("log", base=2); ax.set_xticks(T, [str(t) for t in T]); ax.set_ylim(0, s["E"] * 1.1); ax.set_xlabel("T"); ax.set_ylabel("unikalni eksperci U(T)")
     ax.legend(fontsize=8)
-    save(fig, "unique_experts")
+    save(fig, name)
 
 
 def per_layer():
@@ -152,3 +152,4 @@ def roofline_measured():
 if __name__ == "__main__":
     for f in (speedup_vs_T, unique_experts, per_layer, sustained, verify_bench, ablation, mxfp4, roofline_measured):
         f()
+    unique_experts("routing_gptoss_stats.json", "unique_experts_gptoss")

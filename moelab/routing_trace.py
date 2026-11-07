@@ -32,16 +32,17 @@ def main():
     ap.add_argument("--out", default="runs/routing_qwen3.npz")
     a = ap.parse_args()
     model, tok = load(a.model)
-    blocks = [l.mlp for l in model.layers if hasattr(l.mlp, "switch_mlp")]
-    cls = type(blocks[0])
+    # Qwen3-MoE: layer.mlp.switch_mlp ; gpt-oss: layer.mlp.experts (both mlx-lm SwitchGLU)
+    sws = [getattr(l.mlp, "switch_mlp", None) or getattr(l.mlp, "experts", None) for l in model.layers]
+    sws = [w for w in sws if w is not None]
     rec = []
-    orig_switch = type(blocks[0].switch_mlp).__call__
+    orig_switch = type(sws[0]).__call__
 
     def spy(self, x, indices):  # SwitchGLU.__call__(x, indices): indices [B, L, k]
         rec.append(indices)
         return orig_switch(self, x, indices)
 
-    type(blocks[0].switch_mlp).__call__ = spy
+    type(sws[0]).__call__ = spy
     out = {}
     for name, text in domains().items():
         ids = tok.encode(text)[: a.max_tokens]
@@ -50,7 +51,7 @@ def main():
         inds = np.stack([np.array(r)[0] for r in rec]).astype(np.int16)   # [layers, L, k]
         out[name] = inds
         print(f"{name:13s} tokens={inds.shape[1]} layers={inds.shape[0]} k={inds.shape[2]}")
-    np.savez_compressed(a.out, E=blocks[0].num_experts, **out)
+    np.savez_compressed(a.out, E=sws[0].gate_proj.weight.shape[0], **out)
     print("saved", a.out)
 
 
