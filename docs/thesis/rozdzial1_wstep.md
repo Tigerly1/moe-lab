@@ -55,13 +55,14 @@ Dwie trudności odróżniają ten problem od zwykłego mnożenia macierzy:
 
      | Model | Dekodowanie | Weryfikacja, 4 tokeny | Weryfikacja, 16 tokenów |
      |---|---|---|---|
-     | Qwen3-30B-A3B-4bit | 91,6 → 99,8 tok/s (+9,0%) | +23% | +45% |
-     | gpt-oss-20b-MXFP4 | 75,5 → 81,5 tok/s (+7,9%) | +27% | +70% |
+     | Qwen3-30B-A3B-4bit | 91,5 → 99,8 tok/s (+9,0%) | +23% | +48% |
+     | gpt-oss-20b-MXFP4 | 75,3 → 81,3 tok/s (+8,0%) | +27% | +70% |
+     | DeepSeek-V2-Lite-4bit | 126,4 → 135,5 tok/s (+7,2%) | +13,7% | +33,5% |
 
-     Perplexity bez zmian; kernele są co najmniej tak bliskie referencji fp32 jak ścieżka mlx-lm.
-   - **Warstwa MoE względem mlx-lm (Qwen3, ślady rzeczywiste):** int4 1,20× przy T = 1 i 2,46× przy T = 32; MXFP4 1,26× i 2,37×.
+     Perplexity w granicach 0,1% ścieżki mlx-lm. Zgodność top-1 z referencją fp32 jest co najmniej taka jak dla mlx-lm. W przypadku DeepSeek perplexity jest o 0,1% dalsza od fp32.
+   - **Warstwa MoE względem mlx-lm (Qwen3, ślady rzeczywiste):** int4 1,21× przy T = 1 i 2,45× przy T = 32; MXFP4 1,26× i 2,40× (przebieg odtworzeniowy na finalnych kernelach).
    - **Kształt w pełni spoza strojenia (Qwen3-235B, routing jednostajny):** int4 1,06–1,26×, MXFP4 1,07–1,23×.
-   - **T = 1 na ścianie pamięci:** przy niepowtarzającym się routingu kernel czyta z prędkością 94% (Qwen3), 100% (gpt-oss) i około 103% (Mixtral) z 250 GB/s; mlx-lm osiąga 77% na Qwen3.
+   - **T = 1 na ścianie pamięci:** przy niepowtarzającym się routingu kernel czyta z prędkością 93% (Qwen3), 100% (gpt-oss) i około 103% (Mixtral) z 250 GB/s; mlx-lm osiąga 77% na Qwen3.
 
 4. **Wyjaśnienie mechanizmów zysku** (rozdział 6).
    - Przy T = 1 około połowa przewagi wynika z warunku K % 512 = 0 szybkiej ścieżki `qmv` w MLX, którego nie spełniają Qwen3 (K = 768) ani gpt-oss (K = 2880). Reszta to fuzja i pełne wykorzystanie linii. Wynik jest bezpośrednio związany z otwartym zgłoszeniem MLX #4509.

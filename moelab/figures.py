@@ -132,7 +132,7 @@ def roofline_measured():
     sh = SHAPES["qwen3-30b-a3b"]
     BW, P = 250e9, 6.2e12
     pts = {"mlx-lm": [], "nasz kernel": []}
-    for x in R("crossover_q4_qwen3_uniform.json")["summary"]:
+    for x in R("crossover_r6_q4_qwen3_uniform.json")["summary"]:
         T = x["T"]; fl = rl.flops(T, sh.d, sh.f, sh.k); by = rl.bytes_moved(T, sh.d, sh.f, sh.E, sh.k, 4.5)
         pts["mlx-lm"].append((fl / by, fl / (x["A_us"] * 1e-6) / 1e12, T))
         pts["nasz kernel"].append((fl / by, fl / (x["B_us"] * 1e-6) / 1e12, T))
