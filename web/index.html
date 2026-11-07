@@ -40,7 +40,7 @@
   <h1>MoE Kernel Lab</h1>
   <label>backend <select id="backend"><option value="mlx">MLX / Metal (local)</option><option value="cuda">CUDA / Triton (Modal)</option></select></label>
   <label>shape <select id="shape"></select></label>
-  <label>dtype <select id="dtype"><option>float16</option><option>bfloat16</option><option>float32</option></select></label>
+  <label>dtype <select id="dtype"><option>bfloat16</option><option>float16</option><option>float32</option></select></label>
   <label>routing <select id="routing"><option>uniform</option><option>zipf</option><option>one_hot</option><option>trace</option></select></label>
   <label>roofline <select id="hw"></select></label>
   <label>T <input id="tokens" size="22" value="1,2,4,8,16,32,64,128,256"></label>
@@ -192,8 +192,8 @@ function handle(m) {
   $("hw").onchange = redraw; $("baseline").onchange = e => { e.target.dataset.v = e.target.value; redraw(); };
   $("backend").onchange = () => { results = {}; prev = {}; current = null; renderVariants(); redraw(); };
   $("runBtn").onclick = run; $("saveBtn").onclick = save; $("forkBtn").onclick = fork;
-  ["gather_mm","metal_simd_gemv"].forEach(n => META.variants.mlx.includes(n) && checked.mlx.add(n));
-  $("baseline").dataset.v = "gather_mm";
+  ["mlxlm_switchglu_q4","metal_q4_moe"].forEach(n => META.variants.mlx.includes(n) && checked.mlx.add(n));
+  $("baseline").dataset.v = "mlxlm_switchglu_q4";
   cLat = mk("cLat", true, "µs (median)"); cBw = mk("cBw", false, "GB/s"); cSp = mk("cSp", false, "× faster");
   renderVariants(); showShape();
   require.config({ paths: { vs: "https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs" } });
@@ -202,7 +202,7 @@ function handle(m) {
     editor.onDidChangeModelContent(() => { if (!dirty && current) { dirty = true; $("edName").textContent = current + ".py ●"; } });
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, save);
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, run);
-    openVariant("metal_simd_gemv");
+    openVariant("metal_q4_decode_v4");
   });
 })();
 </script>

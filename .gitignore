@@ -10,3 +10,4 @@ autoresearch/results.tsv
 
 # small result JSONs are part of the record
 !runs/*.json
+.claude/
