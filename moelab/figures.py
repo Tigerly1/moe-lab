@@ -30,7 +30,8 @@ def save(fig, name):
 
 def speedup_vs_T():
     fig, ax = plt.subplots(figsize=(5.6, 3.4))
-    for f, lab, col, ls in [("cmp_metal_q4_tiles_mma_qwen3_trace.json", "kafle + MMA, ślady rzeczywiste", ACC, "-"),
+    for f, lab, col, ls in [("cmp_tiles_v2_qwen3-30b-a3b_trace.json", "tiles_v2 (runda 3), ślady", INK, "-"),
+                            ("cmp_metal_q4_tiles_mma_qwen3_trace.json", "kafle + MMA (runda 1), ślady rzeczywiste", ACC, "-"),
                             ("cmp_metal_q4_tiles_mma_qwen3_uniform.json", "kafle + MMA, routing jednostajny", ACC, "--"),
                             ("cmp_metal_q4_tiles_b_qwen3_trace.json", "kafle skalarne, ślady", WARM, "-"),
                             ("cmp_v31_qwen3_trace.json", "v31 (GEMV na slot), ślady", MUTED, ":")]:
@@ -83,7 +84,7 @@ def sustained():
 
 
 def verify_bench():
-    d = R("e2e_verify_bench.json")
+    d = R("e2e_verify_bench_v2.json")
     c = [x["chunk"] for x in d]; s = [np.median(x["stock"]) for x in d]; v = [np.median(x["variant"]) for x in d]
     x = np.arange(len(c)); w = 0.38
     fig, ax = plt.subplots(figsize=(5.6, 3.2))

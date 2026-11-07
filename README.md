@@ -10,14 +10,14 @@ python3 -m venv .venv && .venv/bin/pip install mlx mlx-lm numpy fastapi "uvicorn
 ```
 
 ## Headline result (M4 Pro, 2026-11-07, audit-corrected, AC power)
-Production kernel: `moelab/variants/mlx/metal_q4_moe.py`, a dispatcher over `metal_q4_decode_v4` (T=1) and `metal_q4_tiles_mma` / `metal_q4_tiles_b` (T>1).
+Production kernel: `moelab/variants/mlx/metal_q4_moe.py`, a dispatcher over `metal_q4_decode_v4` (T=1) and `metal_q4_tiles_v2` / `metal_q4_tiles_b` (T>1).
 
-- **Plain decode, Qwen3-30B-A3B-4bit, mlx-lm:** 91.5 → **99.9 tok/s (+9.2%)**, with perplexity unchanged.
-- **Speculative-verify / small-batch step** (full model, fixed text, chunk of 4 / 7 / 16 tokens): **+19% / +31% / +40%**.
+- **Plain decode, Qwen3-30B-A3B-4bit, mlx-lm:** 91.6 → **99.8 tok/s (+9.0%)**, with perplexity unchanged.
+- **Speculative-verify / small-batch step** (full model, fixed text, chunk of 4 / 7 / 16 tokens): **+23% / +34% / +45%**.
 - **MoE layer at T=1 vs real mlx-lm:**
   - **1.24×** on Qwen3, 1.10–1.12× on gpt-oss, 1.04× on Mixtral (slope timing).
   - Our kernel reads memory at **95–100% of the measured ~255 GB/s** hardware limit; MLX reaches 79% on Qwen3.
-- **MoE layer at T>1, real routing traces:** 1.64× at T=8, 1.87× at T=16, 2.36× at T=32. Consecutive tokens share ~45% of experts, and the kernel reads each expert once per tile.
+- **MoE layer at T>1, real routing traces:** 1.72× at T=8, 1.98× at T=16, 2.44× at T=32. Held-out shapes: Mixtral 1.95× at T=8, Qwen3-235B 1.27× at T=16. Consecutive tokens share ~45% of experts, and the kernel reads each expert once per tile.
 - **Mechanism at T=1:**
   - About half the gain is MLX's qmv fast path requiring K % 512 == 0, which Qwen3 (K=768) and gpt-oss (2880) miss.
   - The rest is fusion and full lane use.

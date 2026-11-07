@@ -199,6 +199,48 @@ Model: mlx-lm `Qwen3-30B-A3B-4bit`, AC power, 3 interleaved rounds.
 - U(8 consecutive tokens) is 40.6 at layer 0 and 25–29 elsewhere.
 - This matches the Mixtral literature: the first layer routes almost randomly.
 
+### Autoresearch round 3: T>1 tiles (`autoresearch/program_tiles.md`) → `metal_q4_tiles_v2`
+- **Agent result:** score 1.264 → 1.316 (+4.1%). Three changes:
+  - LPR down-projection lanes for single-slot tiles;
+  - a scalar path for 2-slot tiles (MMA wins only for ≥3 slots);
+  - a per-shape down K-split.
+- **Agent's measured limit:** at T≥8 the MMA tiles are bound by MMA instruction count (removing the up-projection MMAs saves 27%; removing all dequant saves only 5%). Reusing weights raised the arithmetic intensity, so the kernel is now compute-bound.
+- **Independent verification**, 5×6 against mlx-lm, including shapes never used for tuning:
+
+| shape (routing) | T=2 | T=4 | T=8 | T=16 | T=32 |
+|---|---|---|---|---|---|
+| Qwen3-30B-A3B (real traces) | 1.251 | 1.422 | 1.721 | 1.982 | **2.443** |
+| Qwen3-235B-A22B, held-out (uniform) | 1.050 | 1.084 | 1.132 | 1.266 | |
+| Mixtral-8x7B, held-out (uniform) | 1.129 | 1.386 | **1.952** | | |
+| OLMoE-1B-7B (uniform) | 1.055 | 1.168 | 1.215 | 1.359 | |
+
+Correctness: worst rel-err 3.9e-3 over 5 shapes × 4 routings × T ∈ {1..64}.
+
+### The Mixtral puzzle, solved: implicit cache reuse from dispatch order
+- **The puzzle:** v31 (no tiling) gained up to 1.36× on Mixtral at T≥4, while matching MLX at T=1.
+- **The test:** slope timing, T=4, with expert-distinct vs shared routing:
+
+| routing | mlx-lm | v31 |
+|---|---|---|
+| 8 slots → 8 distinct experts | 3075 µs (258 GB/s) | 3054 µs (260 GB/s) |
+| 8 slots → 2 experts (one_hot) | 3063 µs | **2243 µs** |
+
+- **Interpretation:**
+  - When every slot needs a different expert, both kernels run at the true DRAM ceiling of about 260 GB/s.
+  - When slots share an expert, v31 reuses the weights through the cache (SLC) and MLX does not. v31's grid puts slots on the y axis, so slots of the same expert run concurrently. MLX `gather_qmv` uses grid (M, N/8, B) with the batch outermost.
+  - Uniform routing at T=4 already has duplicates (U ≈ 5.5 of 8 slots), which explains the earlier gain.
+  - `tiles_v2` makes the reuse explicit and reaches 1.95× at T=8.
+
+### Final end-to-end (dispatcher = v4 at T=1 + tiles_v2 at T>1), Qwen3-30B-A3B-4bit, AC power
+
+| mode | stock | ours | gain |
+|---|---|---|---|
+| plain decode, 512 tokens | 91.6 tok/s | **99.8 tok/s** | **+9.0%** |
+| verify chunk 2 | 102.6 | 112.1 | +9.3% |
+| verify chunk 4 (3 drafts) | 127.5 | 156.6 | **+22.9%** |
+| verify chunk 7 (6 drafts) | 126.9 | 170.0 | **+34.0%** |
+| verify chunk 16 | 192.6 | 279.2 | **+44.9%** |
+
 ## Open problems / next steps
 1. ~~Small-batch + skewed routing~~ → solved by `metal_q4_tiles_mma` (round 1). Remaining: gpt-oss (d % 128 ≠ 0) tail path, T=2 with uniform routing (round 3 running).
 2. **Regime dispatcher:** v31 for T ≤ 16, sorted `gather_qmm` above. The crossover sits around T≈16–32 on Qwen3 (RQ1).
