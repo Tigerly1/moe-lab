@@ -82,6 +82,23 @@ Porównujemy nasz kernel ze ścieżką mlx-lm skwantyzowaną w trybie `mxfp4`. F
 - GEMV z pełnym wykorzystaniem linii przy T = 1;
 - współdzielenie odczytów wag między slotami tego samego eksperta przy T > 1.
 
+## 6.4b. Drugi pełny model: gpt-oss-20b (MXFP4)
+
+| Tryb | mlx-lm (tok/s) | Nasz kernel (tok/s) | Zysk |
+|---|---|---|---|
+| dekodowanie, 512 tokenów | 75,5 | 81,2 | +7,6% |
+| krok weryfikacji, 4 tokeny | 125,9 | 161,6 | +28,4% |
+| krok weryfikacji, 16 tokenów | 174,8 | 287,7 | +64,6% |
+
+**Jakość (teacher forcing).** Nasz kernel jest bliższy referencji fp32 niż ścieżka mlx-lm:
+- zgodność top-1 z fp32: 92,3% wobec 90,5%;
+- perplexity: 179,6 wobec 181,2 (fp32: 172,4).
+
+**Różnice względem Qwen3:**
+- obciążenia (bias) dla każdego eksperta;
+- przycięta funkcja SwiGLU (alpha = 1,702, limit 7, +1 na gałęzi liniowej);
+- skale E8M0 z rzeczywistego checkpointu. To one ujawniły błąd opisany w §7.6.
+
 ## 6.5. Do uzupełnienia
 
 - [ ] Ten sam zestaw pomiarów na GPU NVIDIA: Triton fused_moe i Marlin-MoE przez Modal (RQ4).

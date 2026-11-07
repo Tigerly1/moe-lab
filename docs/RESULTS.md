@@ -274,6 +274,32 @@ Correctness: worst rel-err 3.9e-3 over 5 shapes × 4 routings × T ∈ {1..64}.
 - **Failed:** lookup tables (threadgroup or `simd_shuffle`) were 1.6–2.2× slower; half2 math gave no gain.
 - **Remaining headroom:** gpt-oss points are within ~4% of the memory floor. Qwen3 T=16 is ~45% above its floor, bound by MMA plus decode instruction count.
 
+### End-to-end #2: gpt-oss-20b (`mlx-community/gpt-oss-20b-MXFP4-Q8`, MXFP4 experts, AC power)
+Variant `metal_mxfp4_gptoss`: the `metal_mxfp4_moe` kernels plus per-expert biases and the clamped gpt-oss SwiGLU (alpha 1.702, limit 7, +1 on the linear branch). It is selected by the `ACT` template. `e2e.patch()` dispatches on model type.
+
+Agent-measured numbers, independently re-run:
+
+| mode | stock | ours | gain |
+|---|---|---|---|
+| plain decode, 512 tokens × 3 | 75.5 tok/s | 81.2 tok/s | **+7.6%** (agent: +8.0%) |
+| verify chunk 1 | 67.9 | 72.4 | +6.6% |
+| verify chunk 2 (agent) | 97.4 | 112.5 | +15.5% |
+| verify chunk 4 | 125.9 | 161.6 | **+28.4%** |
+| verify chunk 7 (agent) | 127.8 | 168.6 | +31.9% |
+| verify chunk 16 | 174.8 | 287.7 | **+64.6%** |
+
+**Quality:** teacher-forced on the frozen corpus (raw markdown, no harmony template, so the absolute PPL is high):
+
+| path | PPL | top-1 agreement with fp32 |
+|---|---|---|
+| stock | 181.2 | 90.5% |
+| ours | 179.6 | 92.3% |
+| fp32 experts | 172.4 | — |
+
+Our kernel is closer to fp32 than stock.
+
+One layer-17 channel reaches about 40,000, which is close to the half range. The kernel matches it in fp32 (40037.586 vs 40037.590); the per-layer bf16 difference is one ULP.
+
 ## Open problems / next steps
 1. ~~Small-batch + skewed routing~~ → solved by `metal_q4_tiles_mma` (round 1). Remaining: gpt-oss (d % 128 ≠ 0) tail path, T=2 with uniform routing (round 3 running).
 2. **Regime dispatcher:** v31 for T ≤ 16, sorted `gather_qmm` above. The crossover sits around T≈16–32 on Qwen3 (RQ1).

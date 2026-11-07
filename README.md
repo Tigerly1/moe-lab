@@ -13,6 +13,7 @@ python3 -m venv .venv && .venv/bin/pip install mlx mlx-lm numpy fastapi "uvicorn
 Production kernel: `moelab/variants/mlx/metal_q4_moe.py`, a dispatcher over `metal_q4_decode_v4` (T=1) and `metal_q4_tiles_v2` / `metal_q4_tiles_b` (T>1).
 
 - **Plain decode, Qwen3-30B-A3B-4bit, mlx-lm:** 91.6 → **99.8 tok/s (+9.0%)**, with perplexity unchanged.
+- **gpt-oss-20b (MXFP4, second real model):** plain decode 75.5 → 81.2 tok/s (+7.6%); verify step of 4 / 16 tokens +28% / +65%; closer to fp32 than stock.
 - **Speculative-verify / small-batch step** (full model, fixed text, chunk of 4 / 7 / 16 tokens): **+23% / +34% / +45%**.
 - **MoE layer at T=1 vs real mlx-lm:**
   - **1.24×** on Qwen3, 1.10–1.12× on gpt-oss, 1.04× on Mixtral (slope timing).
