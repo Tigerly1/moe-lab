@@ -1,0 +1,7 @@
+Fetching 12 files:   0%|          | 0/12 [00:00<?, ?it/s]Fetching 12 files: 100%|██████████| 12/12 [00:00<00:00, 3235.10it/s]
+ctx   128: stock 13.35 ms  variant 12.60  no-moe 5.58  | MoE stock 7.77 -> 7.02 ms (1.107x), MoE share 58%, e2e 1.059x
+ctx  1024: stock 14.78 ms  variant 13.56  no-moe 6.66  | MoE stock 8.12 -> 6.90 ms (1.177x), MoE share 55%, e2e 1.090x
+ctx  4096: stock 16.56 ms  variant 15.45  no-moe 8.38  | MoE stock 8.17 -> 7.07 ms (1.156x), MoE share 49%, e2e 1.071x
+ctx  8192: stock 20.21 ms  variant 19.47  no-moe 12.06  | MoE stock 8.15 -> 7.41 ms (1.100x), MoE share 40%, e2e 1.038x
+ctx 16384: stock 24.39 ms  variant 24.11  no-moe 16.61  | MoE stock 7.79 -> 7.50 ms (1.038x), MoE share 32%, e2e 1.012x
+guard: probe min 225 GB/s vs best 242 on Apple M4 Pro (93%) -> ok

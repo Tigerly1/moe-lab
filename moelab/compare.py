@@ -21,8 +21,8 @@ import numpy as np
 def child(a):
     import mlx.core as mx
     from . import mlx_backend as be
-    from .shapes import SHAPES
-    sh = SHAPES[a.shape]
+    from .shapes import SHAPES, MoEShape
+    sh = SHAPES[a.shape] if not a.dims else MoEShape(a.shape, *map(int, a.dims.split(",")))
     w = be.make_weights(sh, a.dtype, seed=a.seed)
     mods = [be.load_variant(p) for p in (a.A, a.B)]
     states = [m.prepare(*w) for m in mods]
@@ -78,6 +78,7 @@ def main():
     ap.add_argument("--out", default=None)
     ap.add_argument("--seed-base", type=int, default=0, help="launch L uses seed seed_base+L")
     ap.add_argument("--windows", type=int, default=3, help="distinct (x, routing) inputs per launch")
+    ap.add_argument("--dims", default=None, help="custom shape d,f,E,k (overrides --shape lookup)")
     a = ap.parse_args()
     if a.child:
         return child(a)
@@ -85,7 +86,7 @@ def main():
     for L in range(a.launches):
         cmd = [sys.executable, "-m", "moelab.compare", a.A, a.B, "--child", "--shape", a.shape, "--dtype", a.dtype,
                "--routing", a.routing, "--rounds", str(a.rounds), "--seed", str(a.seed_base + L),
-               "--windows", str(a.windows), "--tokens", *map(str, a.tokens)]
+               "--windows", str(a.windows), "--tokens", *map(str, a.tokens)] + (["--dims", a.dims] if a.dims else [])
         out = subprocess.run(cmd, capture_output=True, text=True, check=True).stdout
         recs = [json.loads(l) for l in out.splitlines() if l.startswith("{")]
         probes += [r["probe"] for r in recs if "probe" in r]

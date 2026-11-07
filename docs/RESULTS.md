@@ -547,6 +547,73 @@ The audit verified as sound:
 | DeepSeek e2e plain (identical 225/225) / verify 4 / 16 / 32 | +7.3% / +13.6% / +33.4% / +63.3% |
 | crossover uniform T=64/256/512 | 1.867 / 1.087 / 0.990 |
 
+## Round 7 (2026-11-07, daytime): wider and narrower testing, and what it changed
+
+Goal: find wrong or slower results outside the shapes the kernels were tuned on. Every flag from a quick screen was re-measured with `moelab.compare` before it counted.
+
+### Harness changes
+- **GPU contention guard** (`moelab/guard.py`): every `compare`, `slope` and `e2e` run brackets itself with a 512 MB read-bandwidth probe and compares it with the best probe ever recorded on that chip (`runs/hw_probe.json`). Below 92% of that best value the run is flagged CONTENDED.
+  - Trigger: a T=1 slope run with Chrome and the display active gave 80% of floor instead of 93%, while the speedup barely moved (1.196× vs 1.222×).
+  - Lesson: A/B ratios are robust to contention; absolute "% of floor" numbers are not.
+  - Check: a concurrent matmul loop drops the probe from ~236 to 8 GB/s and the guard fires.
+- **Narrow edge cases** (`tests/test_edge_cases.py`, 100 tests):
+  - T at every dispatch boundary (1, 2, 3, 4, 5, 7, 8, 9, 15, 17, 31, 63, 65, 127, 129, 257);
+  - d or f not a multiple of 128, plus k=1, k=E and E=1;
+  - zero or unnormalized combine weights (an all-zero row must give exactly zero);
+  - every token routed to the same experts;
+  - slot-order invariance;
+  - batch consistency (token t inside T=16 matches T=1);
+  - 100× activations.
+  - All pass. Mutation check: swapping one expert of one token raises the error 6–15× over the clean run, so 2–5× above the tolerance. A 3% change of a single combine weight is caught at T ≤ 3 but not at T=17.
+- **Wide random sweep** (`moelab/sweep.py`): 60 random shapes per run (d 512–5120, f 256–4096, E 8–256, k 1–8, T 1–128, bf16/fp16, uniform/zipf/one-hot routing).
+- **Targeted grid** (`moelab/grid.py`): six real-model shapes × T chosen by load = T·k/E (average tokens per expert, 1–32).
+
+### Findings
+1. **Correct everywhere.** 300 random cases (5 sweeps) and 100 edge cases: all within tolerance vs the fp32 reference.
+2. **Slower than mlx-lm at high load.** On the original dispatcher, 17/60 random int4 cases and 16/60 MXFP4 cases were below 1.0×. The grid shows why: the deciding quantity is **load = T·k/E**, not T.
+   - Real-model shapes win clearly up to load 8 (1.2–2.1×), are roughly at parity at load 12–32 (0.88–1.23×), and lose at load 32 on some shapes.
+   - int4 on gpt-oss-like shapes (d=2880, scalar tile path) loses from load 6 (0.93×) down to 0.44×.
+   - Experts with d·f < 1M lose earlier.
+   - The earlier "wins up to T=256" held only because Qwen3 has E=128 and k=8, so load at T=256 is only 16.
+3. **Fix:** above a load threshold the dispatchers now call `moelab/fallback.py:gather_moe`, a copy of mlx-lm's own SwitchGLU path (sorted `gather_qmm`) on our state layout. Above the threshold the result therefore *is* the baseline.
+   - int4: custom kernels up to load 8 when d and f are multiples of 128 and d·f ≥ 2^20, otherwise up to load 4.
+   - MXFP4: custom up to load 8.
+   - gpt-oss e2e patch: stock above load 8.
+   - Re-run, same seeds: the int4 minimum went from 0.494× to 0.682×, MXFP4 from 0.854× to 0.946×. Most remaining flags are 0.98–1.00× (fallback ≈ baseline, within noise).
+   - Held-out seed 21: the screen flagged 14 cases. Every one below 0.95× was re-measured with compare (8 windows, 3 launches); medians are 1.05–1.08×, except fallback cases at 0.999×. One CI touches parity: d512 f4096 E16 k2, T=1, 1.053× [0.992, 1.085] (`runs/t1_*.json`, `runs/recheck_*.json`). The screen's single-process timing produces false flags (0.51×, 0.78×, 0.88× all became 1.04–1.22×).
+4. **Fresh crossover** (`runs/crossover_r7_*.json`, seeds 9000):
+
+| shape | T=16 | 32 | 64 | 128 | 256 | 512 |
+|---|---|---|---|---|---|---|
+| Qwen3-30B-A3B | | | 1.87 | 1.34 | 1.01 (fallback) | 1.02 (fallback) |
+| gpt-oss-20b, int4 | 1.42 | 1.32 | 1.00 (fallback) | 0.98 [0.98, 1.02] (fallback) | | |
+
+   - Before the fix, the gpt-oss int4 numbers at T=64 and 128 were 0.71× and 0.51×.
+   - Cost: Qwen3 gives up the 4–9% the custom kernel had at T=192–384.
+   - Headline numbers are unchanged: every headline cell runs at load ≤ 4, where dispatch is identical.
+5. **Remaining limitation: saturated skew.** If all k experts of a step receive every token (synthetic one-hot, d2560 f256 E64 k8, T=32), the policy sees load 4 but the true load is 32, and the custom kernel runs at 0.73×.
+   - Real traces never get close. The busiest expert in a T=32 window gets 26 (Qwen3), 22 (gpt-oss) or 13 (DeepSeek) tokens at the median, but the mean per active expert is 5.3, 6.6 and 3.7.
+   - The real-trace layer speedups at T=32 (2.45×) already include that skew.
+6. **Observation: one hot expert per layer, per document.** In each layer, one expert is picked by a median 68% (Qwen3), 54% (gpt-oss) and 31% (DeepSeek) of a document's tokens; uniform routing would give 6–12%.
+   - The hot expert differs by domain: in 98% (Qwen3) and 92% (gpt-oss) of layers, the three documents have different hot experts.
+   - This is the main source of the T>1 weight reuse.
+   - Caveat: 3 documents, ~5k tokens. Related "super expert" work exists in the literature, so this is not claimed as new.
+7. **Long context: where decode time goes** (`moelab/breakdown.py`, Qwen3, real KV cache; "no-moe" = MoE block returns zeros):
+
+| context | stock ms/token | ours | no-moe | MoE stock → ours | MoE share (stock) | e2e |
+|---|---|---|---|---|---|---|
+| 128 | 13.35 | 12.60 | 5.58 | 7.77 → 7.02 (1.11×) | 58% | 1.059× |
+| 1k | 14.78 | 13.56 | 6.66 | 8.12 → 6.90 (1.18×) | 55% | 1.090× |
+| 4k | 16.56 | 15.45 | 8.38 | 8.17 → 7.07 (1.16×) | 49% | 1.071× |
+| 8k | 20.21 | 19.47 | 12.06 | 8.15 → 7.41 (1.10×) | 40% | 1.038× |
+| 16k | 24.39 | 24.11 | 16.61 | 7.79 → 7.50 (1.04×) | 32% | 1.012× |
+
+   - Most of the e2e shrink is Amdahl: attention grows from 5.6 to 16.6 ms.
+   - But the MoE-only gain also falls (1.18× → 1.04×), although MoE work does not depend on context.
+   - **Tested and rejected hypothesis:** memory interference from streaming the KV cache. A layer-level chain with 4–34 MB of reads per layer between MoE calls keeps the gain at 1.25–1.28× (`runs/kv_interleave.py`).
+   - Open: the cause is unknown. Candidates are CPU-encode/GPU overlap and attribution error of the "no-moe" subtraction. Spread across rounds is 0.1–0.3 ms.
+8. **Full-model tests on the new dispatcher:** `MOE_SLOW=1` gives 454 passed, 3 xfailed.
+
 ## Open problems / next steps
 1. ~~Small-batch + skewed routing~~ → solved by `metal_q4_tiles_mma` (round 1). Remaining: gpt-oss (d % 128 ≠ 0) tail path, T=2 with uniform routing (round 3 running).
 2. **Regime dispatcher:** v31 for T ≤ 16, sorted `gather_qmm` above. The crossover sits around T≈16–32 on Qwen3 (RQ1).

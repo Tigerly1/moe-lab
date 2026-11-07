@@ -101,9 +101,10 @@ def _patch_gptoss(model, mod):
 
     def call(self, x):
         T = x.size // x.shape[-1]
-        if T > MAX_T or not getattr(cls, "_use_variant", False):
-            return stock(self, x)
         k = self.num_experts_per_tok
+        if T > MAX_T or not getattr(cls, "_use_variant", False) or \
+                (T > 1 and T * k / self._variant_state["g"][0].shape[0] > 8):   # round 7 load policy
+            return stock(self, x)
         vals, inds = mlx_topk(self.router(x), k=k, axis=-1)
         w = mx.softmax(vals, axis=-1, precise=True)
         y = mod.run(self._variant_state, x.reshape(T, -1), inds.reshape(T, k), w.reshape(T, k).astype(mx.float32))

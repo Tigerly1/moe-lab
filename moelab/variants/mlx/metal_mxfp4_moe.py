@@ -18,6 +18,8 @@ the E8M0 scale is applied in fp32 to each scale group's partial product, never i
 """
 import mlx.core as mx
 
+from moelab.fallback import gather_moe
+
 META = {"name": "metal_mxfp4_moe", "description": "custom Metal MXFP4: v4 GEMV (T=1), paired-slot GEMV (T<8), expert groups + simdgroup MMA (T>=8)"}
 MODE, GS, BITS = "mxfp4", 32, 4
 W_BITS = 4 + 8 / 32
@@ -460,8 +462,13 @@ def _rt(nr, rt):
     return rt
 
 
+LOAD_MAX = 8  # round 7: above 8 tokens/expert MLX gather_qmm is on par or faster (runs/grid_mxfp4.json)
+
+
 def run(s, x, idx, wts):
     T, k = idx.shape
+    if T > 1 and T * k / s["g"][0].shape[0] > LOAD_MAX:
+        return gather_moe(s, x, idx, wts, GS, BITS, MODE)
     (gq, gs), (uq, us), (dq, ds) = s["g"], s["u"], s["d"]
     F, D = gq.shape[1], dq.shape[1]
     base = [("T", x.dtype), ("D", D), ("F", F), ("K", k)]

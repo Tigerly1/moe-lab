@@ -26,7 +26,7 @@ Every cell was reproduced on the final code in one clean run of `scripts/reprodu
 
 - Quality: perplexity is within 0.1% of stock on all three models. Top-1 agreement with an fp32-expert reference is as high as stock or higher. On DeepSeek our perplexity is 0.1% further from fp32 than stock (41.40 vs 41.35; fp32 41.26). Files: `runs/e2e_dsv2_quality.json`; Qwen3 and gpt-oss in `docs/RESULTS.md`.
 - Plain-decode greedy outputs are identical to stock only on DeepSeek (225/225 tokens). On Qwen3 and gpt-oss they diverge after ~22 tokens (bf16 noise); both arms still decode the same number of tokens.
-- The decode gain shrinks with context length (Amdahl's law: attention grows): Qwen3 +8.1% at 1k, +7.2% at 4k, +4.3% at 8k context (256 tokens × 2 rounds, `runs/e2e_context_*.json`).
+- The decode gain shrinks with context length: Qwen3 +8.1% at 1k, +7.2% at 4k, +4.3% at 8k context (`runs/e2e_context_*.json`); per-step breakdown +9.0% at 1k, +3.8% at 8k, +1.2% at 16k (`runs/breakdown_qwen3.json`). Attention grows (Amdahl), and the MoE-only gain also falls from 1.18× to 1.04×. One hypothesis (KV streaming interference) was tested and rejected; the cause is open.
 - The verify step is what speculative decoding and small-batch serving run. On this setup, free-running speculative decoding with a 0.6B draft is itself slower than plain decoding (stock 72–77 vs 91.5 tok/s).
 
 **MoE layer vs the real mlx-lm path** (bf16; fresh seeds; CIs resampled by launch):
@@ -38,7 +38,8 @@ Every cell was reproduced on the final code in one clean run of `scripts/reprodu
 
 The table values come from the reproduction run on the final kernels (`runs/repro/*_qwen3_trace.json`, seeds 5000+).
 
-- **Crossover (RQ1):** our kernels win up to T=256 (1.09–1.10×). At T=512 they are 1–2% slower than mlx-lm's sorted grouped GEMM, so e2e uses stock above 256 tokens. Whole-model 32-token chunks (short prefill or batch): **1.83×** (`runs/crossover_r6_*`, `runs/e2e_prefill_chunks_qwen3_r6.json`).
+- **Crossover (RQ1), revised in round 7:** what decides the winner is load = T·k/E (average tokens per expert), not T. Our kernels win clearly up to load 8: Qwen3 1.87× at T=64 and 1.34× at T=128. Above that they are at parity or slower (int4 on gpt-oss-like d=2880 down to 0.44×), so the dispatchers now fall back to mlx-lm's own sorted `gather_qmm` path. After the fix, the worst case is parity (`runs/crossover_r7_*`, `runs/grid_*`, `runs/sweep_*`). Whole-model 32-token chunks (short prefill or batch): **1.83×** (`runs/crossover_r6_*`, `runs/e2e_prefill_chunks_qwen3_r6.json`).
+- **Tested wide and narrow (round 7):** 300 random shapes and 100 edge cases are all correct. A GPU-contention guard flags runs where another process steals bandwidth. Details and the one remaining limitation (all k experts saturated, never seen in real traces) are in `docs/RESULTS.md`, "Round 7".
 - **Clean held-out shape (Qwen3-235B, uniform routing):** int4 1.06–1.26×, MXFP4 1.07–1.23×. Partially seen shapes: Mixtral up to 1.82× and DeepSeek-V2-Lite up to 1.42× (MXFP4).
 - **T=1 is at the memory wall.** With non-repeating routing our GEMV reads at 93% (Qwen3), 100% (gpt-oss) and ~103% (Mixtral) of 250 GB/s. mlx-lm reaches 77% on Qwen3.
 - **Mechanism at T=1:**

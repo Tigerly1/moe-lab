@@ -1,0 +1,6 @@
+A=mlxlm_switchglu_q4.py  B=metal_q4_moe.py  shape=gpt-oss-20b bfloat16 uniform  3 launches x 3 rounds
+T= 16  A   3167.0us  B   2223.7us  B is 1.424x  [95% CI 1.412-1.429, by launch]  err A 6.3e-03 B 3.5e-03
+T= 32  A   5212.2us  B   3940.2us  B is 1.323x  [95% CI 1.309-1.365, by launch]  err A 5.6e-03 B 3.5e-03
+T= 64  A   5449.2us  B   5446.3us  B is 1.001x  [95% CI 0.978-1.011, by launch]  err A 5.6e-03 B 5.6e-03
+T=128  A   7923.2us  B   8056.3us  B is 0.983x  [95% CI 0.983-1.024, by launch]  err A 5.6e-03 B 5.6e-03
+guard: probe min 226 GB/s vs best 242 on Apple M4 Pro (93%) -> ok

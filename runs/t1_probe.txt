@@ -1,0 +1,14 @@
+T=  1  A     68.2us  B     64.8us  B is 1.053x  [95% CI 0.992-1.085, by launch]  err A 6.1e-03 B 3.4e-03
+guard: probe min 230 GB/s vs best 242 on Apple M4 Pro (95%) -> ok
+T=  1  A    391.9us  B    359.4us  B is 1.090x  [95% CI 1.033-1.140, by launch]  err A 6.7e-03 B 3.4e-03
+guard: probe min 222 GB/s vs best 242 on Apple M4 Pro (92%) -> CONTENDED - absolute numbers unreliable, close other GPU users and re-run
+T=  1  A     52.1us  B     45.1us  B is 1.153x  [95% CI 1.103-1.210, by launch]  err A 6.1e-03 B 3.8e-03
+guard: probe min 231 GB/s vs best 242 on Apple M4 Pro (95%) -> ok
+T=  1  A     63.8us  B     52.3us  B is 1.219x  [95% CI 1.181-1.253, by launch]  err A 6.0e-03 B 3.4e-03
+guard: probe min 228 GB/s vs best 242 on Apple M4 Pro (94%) -> ok
+T=  1  A    264.4us  B    253.1us  B is 1.044x  [95% CI 1.039-1.120, by launch]  err A 6.9e-03 B 3.5e-03
+guard: probe min 176 GB/s vs best 242 on Apple M4 Pro (73%) -> CONTENDED - absolute numbers unreliable, close other GPU users and re-run
+T=  1  A    157.0us  B    148.2us  B is 1.059x  [95% CI 1.041-1.099, by launch]  err A 6.7e-03 B 3.2e-03
+guard: probe min 227 GB/s vs best 242 on Apple M4 Pro (94%) -> ok
+T=  1  A    178.6us  B    158.2us  B is 1.129x  [95% CI 1.110-1.165, by launch]  err A 7.4e-03 B 3.5e-03
+guard: probe min 222 GB/s vs best 242 on Apple M4 Pro (92%) -> CONTENDED - absolute numbers unreliable, close other GPU users and re-run

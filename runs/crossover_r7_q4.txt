@@ -1,0 +1,6 @@
+A=mlxlm_switchglu_q4.py  B=metal_q4_moe.py  shape=qwen3-30b-a3b bfloat16 uniform  3 launches x 3 rounds
+T= 64  A   3976.3us  B   2130.1us  B is 1.867x  [95% CI 1.803-1.903, by launch]  err A 6.4e-03 B 3.4e-03
+T=128  A   4213.1us  B   3136.8us  B is 1.343x  [95% CI 1.340-1.360, by launch]  err A 6.4e-03 B 3.5e-03
+T=256  A   6004.9us  B   5971.2us  B is 1.006x  [95% CI 0.998-1.027, by launch]  err A 6.4e-03 B 6.4e-03
+T=512  A  10251.1us  B  10015.3us  B is 1.024x  [95% CI 1.000-1.027, by launch]  err A 6.4e-03 B 6.4e-03
+guard: probe min 217 GB/s vs best 242 on Apple M4 Pro (90%) -> CONTENDED - absolute numbers unreliable, close other GPU users and re-run

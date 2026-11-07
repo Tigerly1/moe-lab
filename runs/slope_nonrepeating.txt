@@ -1,0 +1,15 @@
+qwen3-30b-a3b T=1 uniform windows=80: residual-add-only slope 2.3us (fixed 208us)
+  mlxlm_switchglu_q4     per-call   112.8us  minus residual   110.4us  fixed/eval    219us  floor   85.1us   77.0% of floor@250  speedup 1.000x
+  metal_q4_decode_v4     per-call    93.2us  minus residual    90.8us  fixed/eval    140us  floor   85.1us   93.7% of floor@250  speedup 1.216x
+  mlxlm_switchglu_mxfp4  per-call   115.5us  minus residual   113.1us  fixed/eval    133us  floor   80.3us   71.0% of floor@250  speedup 0.976x
+  metal_mxfp4_moe        per-call    90.8us  minus residual    88.5us  fixed/eval     87us  floor   80.3us   90.8% of floor@250  speedup 1.248x
+gpt-oss-20b T=1 uniform windows=80: residual-add-only slope 2.3us (fixed 196us)
+  mlxlm_switchglu_q4     per-call   256.0us  minus residual   253.7us  fixed/eval    223us  floor  224.2us   88.4% of floor@250  speedup 1.000x
+  metal_q4_decode_v4     per-call   226.9us  minus residual   224.6us  fixed/eval    157us  floor  224.2us   99.8% of floor@250  speedup 1.130x
+  mlxlm_switchglu_mxfp4  per-call   256.3us  minus residual   254.0us  fixed/eval    138us  floor  211.7us   83.4% of floor@250  speedup 0.999x
+  metal_mxfp4_moe        per-call   217.2us  minus residual   214.9us  fixed/eval    168us  floor  211.7us   98.5% of floor@250  speedup 1.181x
+mixtral-8x7b T=1 uniform windows=80: residual-add-only slope 3.3us (fixed 193us)
+  mlxlm_switchglu_q4     per-call   805.9us  minus residual   802.6us  fixed/eval    202us  floor  793.2us   98.8% of floor@250  speedup 1.000x
+  metal_q4_decode_v4     per-call   776.1us  minus residual   772.8us  fixed/eval    147us  floor  793.2us  102.7% of floor@250  speedup 1.039x
+  mlxlm_switchglu_mxfp4  per-call   768.5us  minus residual   765.1us  fixed/eval    135us  floor  749.2us   97.9% of floor@250  speedup 1.049x
+  metal_mxfp4_moe        per-call   735.1us  minus residual   731.7us  fixed/eval     97us  floor  749.2us  102.4% of floor@250  speedup 1.097x
