@@ -55,7 +55,7 @@ Przyspieszenie liczymy względem mlx-lm na kształtach Qwen3 (int4):
 | ślady rzeczywiste | 1,95 | 2,43 | 1,53 | 1,29 | 1,10 | 0,98 |
 | routing jednostajny | 1,27 | 1,53 | 1,87 | 1,36 | 1,09 | 0,99 |
 
-Nasze kernele wygrywają do T = 256. Przy T = 512 są o 1–2% wolniejsze od posortowanego, grupowanego GEMM-u w MLX, dlatego powyżej 256 tokenów używamy ścieżki standardowej. Model analityczny z rozdziału 4 przewiduje, że warstwa przestaje być ograniczona pamięcią przy T* ≈ 157 dla routingu jednostajnego. Zmierzony przebieg jest z tym zgodny: zysk z ponownego użycia wag maleje, gdy warstwa staje się ograniczona obliczeniami.
+Tabela pokazuje stan sprzed rundy 7: kernele wygrywały do T = 256 na kształcie Qwen3. Szerszy przegląd (§6.7) wykazał jednak, że o zwycięzcy nie decyduje T, lecz **obciążenie** `L = T·k/E`, czyli średnia liczba tokenów na eksperta. Qwen3 ma E = 128 i k = 8, więc nawet przy T = 256 obciążenie wynosi tylko 16; modele z mniejszą liczbą ekspertów osiągają ten próg znacznie wcześniej. Model analityczny z rozdziału 4 przewiduje przejście warstwy w reżim obliczeniowy przy T* ≈ 157 dla routingu jednostajnego. Zmierzony przebieg jest z tym zgodny: zysk z ponownego użycia wag maleje, gdy warstwa staje się ograniczona obliczeniami.
 
 W pełnym modelu fragment 32 tokenów, czyli krótki prefill lub mały batch, przetwarzamy 1,83× szybciej.
 
@@ -128,8 +128,76 @@ Porównujemy nasz kernel ze ścieżką mlx-lm skwantyzowaną w trybie `mxfp4`. F
 - gpt-oss: MXFP4, biasy, przycięta funkcja SwiGLU;
 - DeepSeek-V2: eksperci współdzieleni, MLA.
 
-## 6.5. Do uzupełnienia
+## 6.5. Gdzie zysk jest praktyczny: równoległe zapytania
+
+Dekodowanie pojedynczej rozmowy przyspiesza o 7–9% (z połączonym routerem z §6.6: 10–17%). Największy praktyczny zysk pojawia się jednak wtedy, gdy Mac obsługuje kilka zapytań naraz: serwer `mlx_lm.server` z wieloma użytkownikami, agent z równoległymi wywołaniami, ewaluacja na zbiorze. Każdy krok dekodowania przesyła wtedy przez warstwę MoE B tokenów z B różnych sekwencji. Stock mlx-lm aż do 64 slotów czyta wagi ekspertów osobno dla każdej pary (token, slot), a nasze kernele grupują sloty według eksperta.
+
+**Benchmark `BatchGenerator`** (generator wsadowy używany przez serwer mlx-lm; łączna przepustowość, kernele + połączony router, mlx-lm 0.32.2, `runs/r8/latest/`):
+
+| B | Qwen3-30B-A3B | gpt-oss-20b | DeepSeek-V2-Lite |
+|---|---|---|---|
+| 1 | 1,16 | 1,09 | 1,12 |
+| 8 | 1,23 | 1,43 | 1,27 |
+| 32 | **1,59** (222 → 352 tok/s) | **1,60** (224 → 359) | **1,54** (312 → 481) |
+
+Dwa niezależne uruchomienia na mlx-lm 0.31.3 dają te same stosunki z dokładnością ±0,05.
+
+**Prawdziwy serwer HTTP.** Uruchamiamy `moelab.serve`, czyli `mlx_lm.server` z naszymi kernelami, i porównujemy go z serwerem stock. Klienci wysyłają równolegle zapytania OpenAI `/v1/completions`, 256 tokenów każde (`runs/r8/server_*.json`):
+
+| klienci | Qwen3-30B-A3B | gpt-oss-20b | DeepSeek-V2-Lite |
+|---|---|---|---|
+| 8 | 1,16×, mediana odpowiedzi 17,0 → 14,6 s | 1,35×, 19,3 → 14,2 s | 1,18×, 14,0 → 11,9 s |
+| 32 | **1,38×**, 52,2 → 37,8 s | **1,38×**, 51,8 → 37,3 s | **1,32×**, 40,8 → 30,9 s |
+
+Zysk na serwerze jest niższy niż w benchmarku, bo serwer dodaje prefill, tokenizację i HTTP, a tych etapów kernele nie przyspieszają.
+
+**Poprawność w trybie wsadowym.** Dla jednego kroku dekodowania przy B = 32 największy względny błąd logitów względem prawdy z ekspertami fp32 wynosi 0,19 dla stock i 0,07 dla naszych kerneli; zgodność argmax jest taka sama (93,8%). Wczesne rozchodzenie się wyjść zachłannych przy B ≥ 8 wynika więc z wrażliwości modelu na szum bf16, a nie z błędu kernela.
+
+**Porównanie z llama.cpp** (Qwen3-30B-A3B, GGUF Q4_0 o tej samej liczbie 4,5 bita na wagę, ustawienia domyślne):
+
+| | llama.cpp | stock mlx-lm | nasze kernele |
+|---|---|---|---|
+| 1 strumień (czyste dekodowanie) | 82 tok/s | 90 | 105 |
+| serwer, 8 klientów | **144** | 121 | 142 |
+| serwer, 32 klientów | 150 | 156 | **222** |
+
+Bez naszych kerneli MLX przy 8 klientach ustępuje llama.cpp o 16%. Z nimi wyrównuje przy 8 klientach i wyprzedza llama.cpp o 48% przy 32. Zastrzeżenia: oba systemy działają z ustawieniami domyślnymi, porównanie obejmuje jeden model, a formaty kwantyzacji różnią się szczegółami.
+
+## 6.6. Połączony router
+
+W Qwen3 router (bramka, softmax, argpartition, take, normalizacja) kosztuje 1,49 ms na token. Sama bramka to tylko 0,26 ms; resztę stanowi 4–5 małych wywołań kerneli na warstwę. Jeden kernel Metal (`moelab/router.py`) wybiera top-k bezpośrednio na logitach i liczy wagi. Tak samo projektuje bramkę SGLang. Kernel podnosi zysk w dekodowaniu jednego strumienia z 1,09× do 1,17× (Qwen3), z 1,08× do 1,10× (gpt-oss) i z 1,07× do 1,12× (DeepSeek). Przy B ≥ 4 koszt routera rozkłada się na batch i jego wkład jest pomijalny.
+
+Zmienia się rozstrzyganie remisów. W 9% par (token, warstwa) Qwen3 dwa eksperty mają dokładnie równy logit bf16. Stock i nasz kernel wybierają wtedy różne, równie poprawne zbiory top-k. Perplexity różni się o mniej niż 0,9%. Pierwotna interpretacja, że stock myli się w tych przypadkach, okazała się fałszywa (§7.11).
+
+## 6.7. Szeroki i wąski przegląd poprawności i wydajności
+
+- **Wąskie przypadki brzegowe:**
+  - wszystkie granice dyspozytora;
+  - wymiary niepodzielne przez 128, k = 1, k = E, E = 1;
+  - zerowe i nienormalizowane wagi;
+  - wszystkie tokeny do tych samych ekspertów;
+  - niezależność od kolejności slotów i od składu batcha;
+  - aktywacje 100×;
+  - NaN w logitach routera.
+  
+  Każdy przypadek uruchamiamy też z wyłączoną ścieżką awaryjną, żeby na pewno wykonywał się nasz kernel.
+- **Szeroki przegląd:** 480 losowych kształtów (d 512–5120, f 256–4096, E 8–256, k 1–8, T 1–128, trzy rodzaje routingu). Wszystkie są poprawne.
+- **Wydajność:** kernele wygrywają do obciążenia 24 na ekspertach rozmiaru Qwen3-30B i większych, do 8 na mniejszych oraz do 4 dla int4 przy d = 2880 (ścieżka skalarna). Powyżej tych progów dyspozytor przełącza się na ścieżkę mlx-lm, bit w bit identyczną z oryginałem, więc wynik jest wtedy równy punktowi odniesienia. Przykładowo kształt gpt-oss w int4 przy T = 128 poprawił się z 0,51× do 0,98–1,00×.
+- **Pozostałe straty:**
+  - wszystkie k ekspertów otrzymuje każdy token (tylko syntetycznie, 0,76×; w rzeczywistych śladach nie występuje);
+  - eksperci mniejsi niż w jakimkolwiek badanym modelu (0,93–0,95×).
+- Każde oznaczenie z szybkiego przesiewu było ponownie mierzone pełną procedurą. Kilka rzekomych strat (0,51×, 0,55×, 0,78×) okazało się wygranymi 1,05–1,31×.
+
+## 6.8. Długi kontekst
+
+Rozbicie czasu kroku dekodowania (Qwen3, dwa czyste uruchomienia, `runs/r8/longctx_*_clean*.json`) pokazuje, że zysk na samej warstwie MoE nie zależy od kontekstu: 1,14–1,17× przy 1k i 1,13–1,14× przy 16k (z routerem: 1,27× w obu przypadkach). Zysk całego modelu maleje z 1,13× do 1,07× wyłącznie z powodu prawa Amdahla, bo rośnie udział atencji. Wcześniejszy pojedynczy pomiar sugerujący spadek zysku MoE do 1,04× nie dał się odtworzyć (§7.10).
+
+## 6.9. Aktualność punktu odniesienia
+
+Główne wyniki zmierzyliśmy ponownie na najnowszych wersjach (mlx-lm 0.32.2, MLX 0.32.4). MLX 0.32.4 zawiera już ulepszenie `gather_qmm` z PR #4572. Stosunki zgadzają się z pomiarami na mlx-lm 0.31.3.
+
+## 6.10. Do uzupełnienia
 
 - [ ] Ten sam zestaw pomiarów na GPU NVIDIA: Triton fused_moe i Marlin-MoE przez Modal (RQ4).
-- [ ] Drugi układ Apple, np. M1/M2/M3 (§7.3).
-- [ ] Wykresy w formacie pracy (matplotlib, PDF), wygenerowane z `runs/*.json`.
+- [ ] Drugi układ Apple, np. M2 (`scripts/portability_m2.sh`, §7.3).
+- [ ] Wykresy w formacie pracy dla §6.5–6.8.

@@ -68,9 +68,15 @@ Dwie trudności odróżniają ten problem od zwykłego mnożenia macierzy:
    - Przy T = 1 około połowa przewagi wynika z warunku K % 512 = 0 szybkiej ścieżki `qmv` w MLX, którego nie spełniają Qwen3 (K = 768) ani gpt-oss (K = 2880). Reszta to fuzja i pełne wykorzystanie linii. Wynik jest bezpośrednio związany z otwartym zgłoszeniem MLX #4509.
    - Przy T > 1 zysk pochodzi z lokalności routingu: kernel czyta wagi każdego eksperta raz na kafel. Przy T ≥ 8 staje się ograniczony obliczeniowo (około 80% zmierzonej szybkości MMA, 6,2 TFLOPS).
 
+4a. **Praktyczny zysk w obsłudze równoległych zapytań** (§6.5).
+   - Przy 32 równoległych zapytaniach przepustowość rośnie 1,54–1,60× w benchmarku `BatchGenerator` i 1,32–1,38× w prawdziwym serwerze `mlx_lm.server`. Mediana czasu odpowiedzi spada przy tym o 25–28%.
+   - Wynik dotyczy trzech modeli i najnowszego mlx-lm.
+   - Z naszymi kernelami MLX dorównuje llama.cpp przy 8 klientach i wyprzedza go 1,48× przy 32.
+   - Do tego dochodzi połączony kernel routera: +6–8 punktów procentowych w dekodowaniu jednego strumienia (§6.6).
+
 5. **Metodyka poszukiwań wspieranych przez agenta LLM** (autoresearch, §5.6, RQ5), wraz z opisem zabezpieczeń przed oszukiwaniem metryki i błędów samego agenta.
 
-6. **Udokumentowane korekty** (rozdział 7). Wszystkie liczby przeszły dwa niezależne audyty. Poprawiliśmy m.in.:
+6. **Udokumentowane korekty** (rozdział 7). Wszystkie liczby przeszły trzy niezależne audyty, a wyniki rund 7–8 także przegląd adwersaryjny (§7.9–7.12). Poprawiliśmy m.in.:
    - nieuczciwą pierwszą bazę (przyspieszenie 1,25× zamiast 1,17×);
    - zanikanie aktywacji w łańcuchu pomiarowym;
    - zafałszowanie tok/s w dekodowaniu spekulatywnym przez odsetek akceptacji;

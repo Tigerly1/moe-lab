@@ -76,3 +76,30 @@ Estymaty punktowe się utrzymały.
 ## 7.8. Długość kontekstu
 
 Zysk z dekodowania mierzyliśmy głównie przy krótkich promptach. Przy dłuższym kontekście rośnie udział atencji, czyli odczytów pamięci podręcznej KV, więc zysk maleje zgodnie z prawem Amdahla. Dla Qwen3-30B-A3B przy 8 tys. tokenów kontekstu wynosi on +4,3%, wobec +9,0% przy krótkim promptcie. Wnioski o warstwie MoE pozostają bez zmian, ale korzyść w pełnym systemie zależy od profilu obciążenia.
+
+## 7.9. Zakłócenia od innych procesów na GPU (runda 7)
+
+- **Problem:** inne aplikacje (przeglądarka, kompozytor ekranu) obniżają bezwzględne liczby. Pomiar T = 1 dał 80% granicy przepustowości zamiast 93%, a stosunek A/B prawie się nie zmienił (1,196× wobec 1,222×).
+- **Strażnik:** każdy pomiar jest otoczony sondą przepustowości odczytu, porównywaną z 90. percentylem ostatnich sond dla danego układu i źródła zasilania. Przebiegi poniżej 92% są oznaczane jako zakłócone.
+- **Ograniczenia strażnika:**
+  - mierzy tylko przepustowość pamięci, więc nie wykrywa każdego zakłócenia (§7.10);
+  - przy długotrwałym obciążeniu okno historii po kilku przebiegach uznaje zakłócenie za normę.
+
+## 7.10. Wyniki nieodtwarzalne i fałszywe alarmy
+
+- **Fałszywe alarmy przesiewu.** Szybki przesiew w jednym procesie zgłosił kilka „strat” (0,51×, 0,55×, 0,78×), które w pełnej procedurze okazały się wygranymi 1,05–1,31×. Zasada: przesiew tylko nominuje przypadki, a liczą się wyłącznie ponowne pomiary.
+- **Nieodtworzony spadek przy długim kontekście.** Pojedynczy pomiar w ciągu dnia sugerował spadek zysku MoE do 1,04× przy 16k. Dwa czyste powtórzenia dały 1,13–1,14×. Strażnik tamtego przebiegu nie oznaczył.
+- **Wartości bezwzględne zależą od stanu maszyny.** Wartości bezwzględne tok/s zmieniały się w ciągu dnia o około 9% dla obu wariantów naraz, przy stałym stosunku. Porównujemy wyłącznie stosunki z tej samej sesji.
+
+## 7.11. Wycofane twierdzenie o routerze
+
+- **Pierwotne twierdzenie:** w 9% przypadków router mlx-lm wybiera ekspertów arbitralnie, bo zaokrągla prawdopodobieństwa do bf16 przed top-k, a nasz kernel wybiera „lepiej”.
+- **Weryfikacja:** sprawdziliśmy stock z jego własnym kodem wyboru. Zawsze zwraca poprawny top-k według logitów (0 błędów na 24 576 przypadków). Różnice to dokładne remisy samych logitów bf16, których żadna precyzja softmaxu nie usuwa.
+- **Wniosek:** twierdzenie wycofano, a planowane zgłoszenie do mlx-lm porzucono. Pierwsza wersja weryfikacji również zawierała błąd (forma wyboru z DeepSeek zastosowana do Qwen3).
+
+## 7.12. Ograniczenia porównania z llama.cpp i z serwerem
+
+- llama.cpp i serwer mlx-lm porównujemy wyłącznie w ustawieniach domyślnych, na jednym modelu.
+- Formaty Q4_0 i MLX 4-bit g64 mają tę samą liczbę bitów, ale różną strukturę skal.
+- W trakcie pomiarów serwera wykryliśmy dwa własne błędy narzędzia: puste prompty oraz nieczytany potok logów blokujący serwer. Wyniki zmierzyliśmy ponownie po poprawkach. Przy okazji potwierdziliśmy błąd mlx-lm 0.32.2: jedno zapytanie z pustym promptem trwale wyłącza wątek generowania serwera. Ta klasa błędów jest już zgłoszona (#1513, #1909).
+

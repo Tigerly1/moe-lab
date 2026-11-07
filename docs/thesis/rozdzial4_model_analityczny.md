@@ -78,6 +78,11 @@ Na H100 granica ta leży o rząd wielkości wyżej. Ta sama architektura warstwy
 
 - **Lokalność czasowa:** sąsiednie tokeny dzielą 43–47% ekspertów. Przy losowym routingu byłoby to 6,2%.
 - **Skośność popularności:** 10% najpopularniejszych ekspertów obsługuje 42–59% wyborów.
+- **Gorący ekspert w obrębie dokumentu (runda 7–8):**
+  - W każdej warstwie jeden ekspert, różny dla każdego dokumentu, obsługuje medianowo 68% tokenów dokumentu w Qwen3-30B-A3B, 54% w gpt-oss-20b i 31% w DeepSeek-V2-Lite. Przy routingu jednostajnym byłoby to 6–12%.
+  - W 98% warstw Qwen3 i 92% warstw gpt-oss trzy badane dokumenty mają różnych gorących ekspertów. Nie są to więc niezależni od danych „Super Experts” [65].
+  - Obserwacja jest zgodna z wcześniejszymi doniesieniami o lokalności czasowej [8, 63] i specjalizacji dziedzinowej [64]. Nowa jest jej kwantyfikacja dla pojedynczego dominującego eksperta oraz wykorzystanie w kernelu przy małym T.
+  - Ograniczenie: 3 dokumenty, około 5 tys. tokenów.
 
 **Drugi model: gpt-oss-20b (E = 32, k = 4).**
 

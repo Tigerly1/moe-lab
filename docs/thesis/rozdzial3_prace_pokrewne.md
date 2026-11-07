@@ -123,6 +123,24 @@ Wszystkie te systemy działają na GPU NVIDIA (CUDA, Triton) lub TPU (Pallas). N
 
 **Luka.** O ile nam wiadomo, nie ma pracy, która badałaby kernele warstwy MoE na GPU Apple i na GPU NVIDIA przy wspólnej metodzie: tym samym kontrakcie wariantu, tej samej bramce poprawności i tym samym modelu roofline z liczbą unikalnych ekspertów `U(T)` mierzoną na rzeczywistym routingu. Najbliższe prace albo dotyczą jednej rodziny GPU dyskretnych (TritonMoE, MonoMoE), albo innych jednostek Apple (BaseRT, NPUMoE). Lokalność routingu była dotąd wykorzystywana do decyzji o przenoszeniu ekspertów, a nie do projektowania kernela dla kroku weryfikacji. Ta praca wypełnia tę lukę dla Apple M4 Pro i przygotowuje tę samą metodę dla NVIDIA i TPU.
 
+## 3.7. Lokalność routingu i obsługa równoległych zapytań (uzupełnienie po rundzie 8)
+
+- **Lokalność czasowa routingu jest znana.**
+  - Mixtral [8] raporuje, że ekspert pierwszego wyboru powtarza się w 24–28% kolejnych tokenów, przy 12,5% dla routingu losowego.
+  - Liang i in. [63] mierzą spójność routingu w segmentach tokenów dla 20 modeli MoE, w tym Qwen3 i DeepSeek-V2-Lite (bez gpt-oss). Pokazują, że eksperci wyspecjalizowani dziedzinowo zwiększają tę spójność, a eksperci współdzieleni ją obniżają.
+  - Qiu i in. [64] pokazują, że globalne równoważenie obciążenia, stosowane w Qwen3-MoE, wzmacnia specjalizację dziedzinową ekspertów.
+- **„Super Experts” [65]** to inne zjawisko: kilku ekspertów niezależnych od danych, z ekstremalnymi aktywacjami. Nasz „gorący ekspert” (§4.4) zależy od dokumentu.
+- **Grupowanie tokenów według eksperta jest standardem na GPU NVIDIA:** vLLM `fused_moe` [19] i llama.cpp. W llama.cpp wybór między kernelem macierz–wektor a macierz–macierz zależy od liczby wierszy na eksperta, a wstępny przebieg `map0` buduje listy tokenów dla każdego eksperta [66].
+- **MLX:**
+  - Zgłoszenie MLX #4509 dokumentuje niską przepustowość `gather_qmm` przy M = 1 [67].
+  - PR #4598 z węższą poprawką odrzucono ze względu na złożoność dyspozycji.
+  - PR #4572 poprawił kafelkowanie `gather_qmm` i jest zawarty w MLX 0.32.3+, czyli w naszym punkcie odniesienia.
+  - Obsługę wielu zapytań w serwerze mlx-lm (`BatchGenerator`) dodano w PR #626 [68].
+- **Wkład tej pracy względem powyższych:**
+  - przeniesienie grupowania według eksperta na zunifikowaną pamięć Apple/Metal w MLX, z pomiarem zysku w prawdziwym serwerze;
+  - nie znaleźliśmy opublikowanego przeglądu przepustowości MoE dla B = 1–32 na Apple Silicon;
+  - kwantyfikacja „gorącego eksperta” na poziomie dokumentu dla Qwen3, gpt-oss i DeepSeek-V2-Lite.
+
 ## Bibliografia
 
 Identyfikatory arXiv sprawdzone na arxiv.org (2026-11-07), DOI przez Crossref, adresy URL przez zapytanie HTTP.
@@ -189,3 +207,9 @@ Identyfikatory arXiv sprawdzone na arxiv.org (2026-11-07), DOI przez Crossref, a
 [60] P. Vellaisamy i in., „TaxBreak: Unmasking the Hidden Costs of LLM Inference Through Overhead Decomposition”, 2026. arXiv:2603.12465.
 [61] JAX Authors, „JAX: composable transformations of Python+NumPy programs”, https://github.com/jax-ml/jax
 [62] Apple, „Explore GPU advancements in M3 and A17 Pro” (Tech Talk), https://developer.apple.com/videos/play/tech-talks/111375/
+[63] J. Liang i in., „Not All Models Suit Expert Offloading: On Local Routing Consistency of Mixture-of-Expert Models”, 2025. arXiv:2505.16056.
+[64] Z. Qiu i in., „Demons in the Detail: On Implementing Load Balancing Loss for Training Specialized Mixture-of-Expert Models”, ACL 2025. arXiv:2501.11873. (⚠ treść znana z raportu agenta; do weryfikacji)
+[65] Z. Su i in., „Unveiling Super Experts in Mixture-of-Experts Large Language Models”, ICLR 2026. arXiv:2507.23279.
+[66] ggml-org/llama.cpp, PR #12612 (mul_mv_id vs mul_mm_id wg liczby wierszy na eksperta), https://github.com/ggml-org/llama.cpp/pull/12612 (⚠ do weryfikacji)
+[67] ml-explore/mlx, zgłoszenie #4509, PR #4598, PR #4572, https://github.com/ml-explore/mlx
+[68] ml-explore/mlx-lm, PR #626 (batching w serwerze), https://github.com/ml-explore/mlx-lm/pull/626 (⚠ do weryfikacji)
