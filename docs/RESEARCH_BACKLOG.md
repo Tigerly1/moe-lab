@@ -18,6 +18,9 @@ Rules:
 | 8 | Same gains on a second Apple chip (M2, 16 GB) | 0.7 | high for generality | user runs `scripts/portability_m2.sh` | user | — | `runs/portability_*` | waiting on user |
 | 9 | NVIDIA counterpart (title promises it) | 0.6 | high for the thesis | needs `modal setup` | user, then me | — | — | waiting on user |
 | 11 | Baseline is current: re-run headline on latest mlx-lm 0.32.2 (MLX 0.32.4 already includes gather_qmm PR #4572) | 0.9 | high: honesty | 1 h GPU | me | — | `runs/r8/latest/` | queued |
+| 12 | **MoE larger than RAM on a Mac** (e.g. Qwen3-235B, 132 GB, on 48 GB): an in-RAM (layer, expert) cache plus SSD streaming makes it usable (~4 tok/s) where plain loading thrashes | 0.5 | very high for local users | weeks | me | an LRU/predictive cache on a real run gives < 2 tok/s or loses to macOS's own paging | `runs/r10/expert_cache_sim.json` | **simulated:** real Qwen3 traces, a cache of 30% of experts gives 86% LRU hits / 94% optimal (Belady), and 40% gives 93% / 97%. Prior art: Mixtral offloading (Eliseev & Mazur 2023), LLM in a flash (Apple 2023), MoE-Infinity. |
+| 13 | Speculative decoding for single-stream MoE | — | — | — | — | — | — | **killed:** Qwen3.5/3.6 GatedDeltaNet caches are not trimmable in mlx-lm (native MTP is open PR #990, 1.6k lines, conflicting). On Qwen3 a 0.6B draft already loses (92 vs 105 tok/s). |
+| 14 | MLX command-buffer size (`MLX_MAX_OPS_PER_BUFFER` / `_MB_`) reduces dispatch bubbles in single-stream decode by ≥ 3% e2e | 0.3 | medium, generic | 0.5 h GPU | me | < 2% on Qwen3 and Qwen3.6 | `runs/r10/cmdbuf_*` | queued (GPU busy) |
 | 10 | Upstream MLX kernel fix for the K%512 cliff | 0.3 (merge) | very high if merged | needs Xcode / Metal compiler | user (install), then me | maintainers reject the approach (cf. PR #4598) | — | blocked |
 
 Not doing (low expected value):
