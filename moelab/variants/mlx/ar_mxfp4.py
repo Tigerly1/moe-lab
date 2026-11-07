@@ -31,8 +31,10 @@ HEADER = """
 inline half2 fp4x2(uint p) {
     return as_type<half2>(((p & 0x00080008u) << 12) | ((p & 0x00070007u) << 9));
 }
-// E8M0 scale byte -> float 2^(s-127) * 2^14
-inline float e8s(uint s) { return as_type<float>((s + 14u) << 23); }
+// E8M0 scale byte -> float 2^(s-127), exact for s = 1..254 (s = 0 -> 0). The decode's 2^-14 is undone once
+// per output (swiglu / routing weight * 2^14), not folded in here: (s + 14) << 23 overflows for s >= 241.
+inline float e8s(uint s) { return as_type<float>(s << 23); }
+inline float swiglu(float g, float u) { g *= 0x1p14f; return g / (1.f + metal::exp(-g)) * (u * 0x1p14f); }
 template <typename T>
 inline void load_x32(const device T* xp, thread float* xs) {
     for (uint i = 0; i < 32; ++i) xs[i] = float(xp[i]);
@@ -86,7 +88,7 @@ GATE_UP_SRC = """
     }
     for (uint r = 0; r < R; ++r) {
         float g = simd_sum(ag[r]), u = simd_sum(au[r]);
-        if (lane == 0) h[slot * F + row0 + r] = T(g / (1.f + metal::exp(-g)) * u);
+        if (lane == 0) h[slot * F + row0 + r] = T(swiglu(g, u));
     }
 """
 
@@ -112,7 +114,7 @@ DOWN_SRC = """
             acc[r] += e8s(ds[q]) * dot_fp4x32(hs, ((const device uint4*)dq)[q]);
         }
     }
-    float w = wts[slot];
+    float w = wts[slot] * 0x1p14f;
     for (uint r = 0; r < R; ++r) {
         float a = acc[r];
         for (uint o = LPR / 2; o > 0; o >>= 1) a += simd_shuffle_xor(a, o);
@@ -200,8 +202,8 @@ GATE_UP_G_SRC = GROUP_SCAN + """
             gb += simd_shuffle_xor(gb, o); ub += simd_shuffle_xor(ub, o);
         }
         if (sub == 0) {
-            h[slot * F + row] = T(ga / (1.f + metal::exp(-ga)) * ua);
-            if (n == 2) h[m[1] * F + row] = T(gb / (1.f + metal::exp(-gb)) * ub);
+            h[slot * F + row] = T(swiglu(ga, ua));
+            if (n == 2) h[m[1] * F + row] = T(swiglu(gb, ub));
         }
         return;
     }
@@ -239,7 +241,7 @@ GATE_UP_G_SRC = GROUP_SCAN + """
     for (uint i = 0; i < 2; ++i) {
         float g = 0.f, u = 0.f;
         for (uint j = 0; j < SK; ++j) { g += red[(sg + j) * 128 + lane * 2 + i]; u += red[(sg + j) * 128 + 64 + lane * 2 + i]; }
-        if (fn + i < n) h[m[fn + i] * F + rowm] = T(g / (1.f + metal::exp(-g)) * u);
+        if (fn + i < n) h[m[fn + i] * F + rowm] = T(swiglu(g, u));
     }
 """
 # grouped down: writes w * y per slot (fp32); a combine kernel sums the k slots of each token
@@ -266,8 +268,8 @@ DOWN_G_SRC = GROUP_SCAN + """
         }
         for (uint o = LPR / 2; o > 0; o >>= 1) { a += simd_shuffle_xor(a, o); b2 += simd_shuffle_xor(b2, o); }
         if (sub == 0) {
-            yp[slot * D + row] = wts[slot] * a;
-            if (n == 2) yp[m[1] * D + row] = wts[m[1]] * b2;
+            yp[slot * D + row] = wts[slot] * 0x1p14f * a;
+            if (n == 2) yp[m[1] * D + row] = wts[m[1]] * 0x1p14f * b2;
         }
         return;
     }
@@ -296,7 +298,7 @@ DOWN_G_SRC = GROUP_SCAN + """
     for (uint i = 0; i < 2; ++i) {
         float a = 0.f;
         for (uint j = 0; j < SK; ++j) a += red[(sg + j) * 128 + lane * 2 + i];
-        if (fn + i < n) yp[m[fn + i] * D + rowm] = wts[m[fn + i]] * a;
+        if (fn + i < n) yp[m[fn + i] * D + rowm] = wts[m[fn + i]] * 0x1p14f * a;
     }
 """
 
@@ -344,7 +346,7 @@ DOWN_P_SRC = """
             }
         }
     }
-    float wa = wts[slot], wb = wts[min(nxt, uint(TK - 1))];
+    float wa = wts[slot] * 0x1p14f, wb = wts[min(nxt, uint(TK - 1))] * 0x1p14f;
     for (uint r = 0; r < R; ++r) {
         float a = aa[r], b = ab[r];
         for (uint o = LPR / 2; o > 0; o >>= 1) { a += simd_shuffle_xor(a, o); b += simd_shuffle_xor(b, o); }
@@ -379,7 +381,7 @@ GATE_UP_P_SRC = """
         }
         for (uint r = 0; r < R; ++r) {
             float g = simd_sum(ag[r]), u = simd_sum(au[r]);
-            if (lane == 0) h[slot * F + row0 + r] = T(g / (1.f + metal::exp(-g)) * u);
+            if (lane == 0) h[slot * F + row0 + r] = T(swiglu(g, u));
         }
         return;
     }
@@ -399,8 +401,8 @@ GATE_UP_P_SRC = """
     for (uint r = 0; r < R; ++r) {
         float g = simd_sum(ga[r]), u = simd_sum(ua[r]), g2 = simd_sum(gb[r]), u2 = simd_sum(ub[r]);
         if (lane == 0) {
-            h[slot * F + row0 + r] = T(g / (1.f + metal::exp(-g)) * u);
-            h[nxt * F + row0 + r] = T(g2 / (1.f + metal::exp(-g2)) * u2);
+            h[slot * F + row0 + r] = T(swiglu(g, u));
+            h[nxt * F + row0 + r] = T(swiglu(g2, u2));
         }
     }
 """
@@ -414,18 +416,18 @@ COMBINE_SRC = """
     y[i] = T(a);
 """
 
-_k1 = mx.fast.metal_kernel(name="ar_mxfp4_gate_up_v1", input_names=["x", "gq", "gs", "uq", "us", "idx"],
+_k1 = mx.fast.metal_kernel(name="ar_mxfp4_gate_up_v2", input_names=["x", "gq", "gs", "uq", "us", "idx"],
                            output_names=["h"], source=GATE_UP_SRC, header=HEADER)
-_k2 = mx.fast.metal_kernel(name="ar_mxfp4_down_v1", input_names=["h", "dq", "ds", "idx", "wts"],
+_k2 = mx.fast.metal_kernel(name="ar_mxfp4_down_v2", input_names=["h", "dq", "ds", "idx", "wts"],
                            output_names=["y"], source=DOWN_SRC, header=HEADER)
-_k1p = mx.fast.metal_kernel(name="ar_mxfp4_gate_up_p_v1", input_names=["x", "gq", "gs", "uq", "us", "idx"],
+_k1p = mx.fast.metal_kernel(name="ar_mxfp4_gate_up_p_v2", input_names=["x", "gq", "gs", "uq", "us", "idx"],
                             output_names=["h"], source=GATE_UP_P_SRC, header=HEADER)
-_k2p = mx.fast.metal_kernel(name="ar_mxfp4_down_p_v1", input_names=["h", "dq", "ds", "idx", "wts"],
+_k2p = mx.fast.metal_kernel(name="ar_mxfp4_down_p_v2", input_names=["h", "dq", "ds", "idx", "wts"],
                             output_names=["yp"], source=DOWN_P_SRC, header=HEADER)
 _k0 = mx.fast.metal_kernel(name="ar_mxfp4_map_v1", input_names=["idx"], output_names=["tl"], source=MAP_SRC)
-_k1g = mx.fast.metal_kernel(name="ar_mxfp4_gate_up_g_v5", input_names=["x", "gq", "gs", "uq", "us", "idx", "tl"],
+_k1g = mx.fast.metal_kernel(name="ar_mxfp4_gate_up_g_v10", input_names=["x", "gq", "gs", "uq", "us", "idx", "tl"],
                             output_names=["h"], source=GATE_UP_G_SRC, header=HEADER)
-_k2g = mx.fast.metal_kernel(name="ar_mxfp4_down_g_v5", input_names=["h", "dq", "ds", "idx", "wts", "tl"],
+_k2g = mx.fast.metal_kernel(name="ar_mxfp4_down_g_v10", input_names=["h", "dq", "ds", "idx", "wts", "tl"],
                             output_names=["yp"], source=DOWN_G_SRC, header=HEADER)
 _k3 = mx.fast.metal_kernel(name="ar_mxfp4_combine_v1", input_names=["yp"], output_names=["y"], source=COMBINE_SRC)
 
