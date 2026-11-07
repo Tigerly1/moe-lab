@@ -157,7 +157,7 @@ MMA_HEAD = """
     uint ks = simdgroup_index_in_threadgroup;   // K split: SGK simdgroups share 8 rows
     uint row0 = threadgroup_position_in_grid.x * 8;
     uint p = thread_position_in_grid.y;
-    threadgroup float red[SGK * 128];
+    threadgroup float red[SGK * 128 * MR];
     const device uint* tt = tl + p * (VT + 1);
     uint n = tt[0];
     if (n == 0 || row0 >= NR) return;
@@ -226,46 +226,59 @@ GATE_UP_E_SRC = MMA_HEAD.replace("%SMALL%", """    if (n == 2 && NSMALL >= 2) { 
         return;
     }
 """) + """
+    if (threadgroup_position_in_grid.x % MR) return;   // MMA tiles: one threadgroup per MR x 8 rows (B reused MR times)
     const device T* xa = x + (s0 / K) * D + fm * 8;
     const device T* xb = x + (s1 / K) * D + fm * 8;
     const device uint2* g2 = (const device uint2*)(gq + rr * NW) + fn / 2;
     const device uint2* u2 = (const device uint2*)(uq + rr * NW) + fn / 2;
-    simdgroup_matrix<float, 8, 8> Cg = make_filled_simdgroup_matrix<float, 8, 8>(0.f);
-    simdgroup_matrix<float, 8, 8> Cu = make_filled_simdgroup_matrix<float, 8, 8>(0.f);
-    simdgroup_matrix<float, 8, 8> Pg, Pu;
+    // two explicit 8-row blocks (arrays of simdgroup_matrix spill)
+    simdgroup_matrix<float, 8, 8> Cg0 = make_filled_simdgroup_matrix<float, 8, 8>(0.f), Cu0 = Cg0, Cg1 = Cg0, Cu1 = Cg0;
+    simdgroup_matrix<float, 8, 8> Pg0, Pu0, Pg1, Pu1;
     simdgroup_matrix<MT, 8, 8> Ag, Au, B;
     for (uint g = ks; g < NB; g += SGK) {   // one 64-wide scale group: col c, step s <-> k = 8c + s
-        uint2 wg = g2[g * 4], wu = u2[g * 4];
+        uint2 wg = g2[g * 4], wu = u2[g * 4], wg1 = g2[4 * NW + g * 4], wu1 = u2[4 * NW + g * 4];
         uint pg[2] = {(wg.x & 0xFFFFu) | (wg.y << 16), (wg.x >> 16) | (wg.y & 0xFFFF0000u)};
         uint pu[2] = {(wu.x & 0xFFFFu) | (wu.y << 16), (wu.x >> 16) | (wu.y & 0xFFFF0000u)};
+        uint qg[2] = {(wg1.x & 0xFFFFu) | (wg1.y << 16), (wg1.x >> 16) | (wg1.y & 0xFFFF0000u)};
+        uint qu[2] = {(wu1.x & 0xFFFFu) | (wu1.y << 16), (wu1.x >> 16) | (wu1.y & 0xFFFF0000u)};
         vec<T, 4> a0 = ((const device vec<T, 4>*)(xa + g * 64))[0], a1 = ((const device vec<T, 4>*)(xa + g * 64))[1];
         vec<T, 4> b0 = ((const device vec<T, 4>*)(xb + g * 64))[0], b1 = ((const device vec<T, 4>*)(xb + g * 64))[1];
         for (uint s = 0; s < 8; ++s) {
+            B.thread_elements()[0] = MT(s < 4 ? a0[s] : a1[s - 4]); B.thread_elements()[1] = MT(s < 4 ? b0[s] : b1[s - 4]);
             { vec<MT, 2> v_ = ar_qo2<MT>(pg[s / 4], s % 4); Ag.thread_elements()[0] = v_.x; Ag.thread_elements()[1] = v_.y; }
             { vec<MT, 2> v_ = ar_qo2<MT>(pu[s / 4], s % 4); Au.thread_elements()[0] = v_.x; Au.thread_elements()[1] = v_.y; }
-            B.thread_elements()[0] = MT(s < 4 ? a0[s] : a1[s - 4]); B.thread_elements()[1] = MT(s < 4 ? b0[s] : b1[s - 4]);
-            if (s == 0) { simdgroup_multiply(Pg, Ag, B); simdgroup_multiply(Pu, Au, B); }
-            else { simdgroup_multiply_accumulate(Pg, Ag, B, Pg); simdgroup_multiply_accumulate(Pu, Au, B, Pu); }
+            if (s == 0) { simdgroup_multiply(Pg0, Ag, B); simdgroup_multiply(Pu0, Au, B); }
+            else { simdgroup_multiply_accumulate(Pg0, Ag, B, Pg0); simdgroup_multiply_accumulate(Pu0, Au, B, Pu0); }
+            { vec<MT, 2> v_ = ar_qo2<MT>(qg[s / 4], s % 4); Ag.thread_elements()[0] = v_.x; Ag.thread_elements()[1] = v_.y; }
+            { vec<MT, 2> v_ = ar_qo2<MT>(qu[s / 4], s % 4); Au.thread_elements()[0] = v_.x; Au.thread_elements()[1] = v_.y; }
+            if (s == 0) { simdgroup_multiply(Pg1, Ag, B); simdgroup_multiply(Pu1, Au, B); }
+            else { simdgroup_multiply_accumulate(Pg1, Ag, B, Pg1); simdgroup_multiply_accumulate(Pu1, Au, B, Pu1); }
         }
         float2 sx = ar_colsum(a0, a1, b0, b1);
-        uint grp = rr * NB + g;
-        float sg_ = float(gs[grp]), su = float(us[grp]);
+        uint grp = rr * NB + g, grp1 = grp + 8 * NB;
+        float sg_ = float(gs[grp]), su = float(us[grp]), sg1 = float(gs[grp1]), su1 = float(us[grp1]);
         float bg = float(gb[grp]) - OFF * sg_, bu = float(ub[grp]) - OFF * su;   // A holds q + OFF
+        float bg1 = float(gb[grp1]) - OFF * sg1, bu1 = float(ub[grp1]) - OFF * su1;
         for (uint i = 0; i < 2; ++i) {
-            Cg.thread_elements()[i] = fma(sg_, Pg.thread_elements()[i], fma(bg, sx[i], Cg.thread_elements()[i]));
-            Cu.thread_elements()[i] = fma(su, Pu.thread_elements()[i], fma(bu, sx[i], Cu.thread_elements()[i]));
+            Cg0.thread_elements()[i] = fma(sg_, Pg0.thread_elements()[i], fma(bg, sx[i], Cg0.thread_elements()[i]));
+            Cu0.thread_elements()[i] = fma(su, Pu0.thread_elements()[i], fma(bu, sx[i], Cu0.thread_elements()[i]));
+            Cg1.thread_elements()[i] = fma(sg1, Pg1.thread_elements()[i], fma(bg1, sx[i], Cg1.thread_elements()[i]));
+            Cu1.thread_elements()[i] = fma(su1, Pu1.thread_elements()[i], fma(bu1, sx[i], Cu1.thread_elements()[i]));
         }
     }
     for (uint i = 0; i < 2; ++i) {
-        red[ks * 128 + lane * 2 + i] = Cg.thread_elements()[i];
-        red[ks * 128 + 64 + lane * 2 + i] = Cu.thread_elements()[i];
+        red[ks * 256 + lane * 2 + i] = Cg0.thread_elements()[i];
+        red[ks * 256 + 64 + lane * 2 + i] = Cu0.thread_elements()[i];
+        red[ks * 256 + 128 + lane * 2 + i] = Cg1.thread_elements()[i];
+        red[ks * 256 + 192 + lane * 2 + i] = Cu1.thread_elements()[i];
     }
     threadgroup_barrier(mem_flags::mem_threadgroup);
     if (ks != 0) return;
+    for (uint r = 0; r < 2; ++r)
     for (uint i = 0; i < 2; ++i) {
         float g = 0.f, u = 0.f;
-        for (uint j = 0; j < SGK; ++j) { g += red[j * 128 + lane * 2 + i]; u += red[j * 128 + 64 + lane * 2 + i]; }
-        if (fn + i < n) h[(i ? s1 : s0) * F + row0 + fm] = T(g / (1.f + metal::exp(-g)) * u);
+        for (uint j = 0; j < SGK; ++j) { g += red[(j * 2 + r) * 128 + lane * 2 + i]; u += red[(j * 2 + r) * 128 + 64 + lane * 2 + i]; }
+        if (fn + i < n) h[(i ? s1 : s0) * F + row0 + 8 * r + fm] = T(g / (1.f + metal::exp(-g)) * u);
     }
 """
 
@@ -367,7 +380,7 @@ MAP_SRC = """
     t[0] = n;
 """
 _k0 = mx.fast.metal_kernel(name="ar_tiles_map", input_names=["idx"], output_names=["tl"], source=MAP_SRC)
-_k1e = mx.fast.metal_kernel(name="ar_tiles_gate_up_e3", input_names=["x", "gq", "gs", "gb", "uq", "us", "ub", "idx", "tl"],
+_k1e = mx.fast.metal_kernel(name="ar_tiles_gate_up_e6", input_names=["x", "gq", "gs", "gb", "uq", "us", "ub", "idx", "tl"],
                             output_names=["h"], source=GATE_UP_E_SRC, header=HEADER)
 _k2e = mx.fast.metal_kernel(name="ar_tiles_down_e3_lpr", input_names=["h", "dq", "ds", "db", "idx", "wts", "tl"],
                             output_names=["y"], source=DOWN_E_SRC, header=HEADER)
@@ -425,13 +438,13 @@ def _run_e(base, x, gq, gs, gb, uq, us, ub, dq, ds, db, idx, wts, T, k, F, D):
     tm = base + [("VT", VT), ("TK", T * k), ("MT", mx.bfloat16 if bf else mx.float16), ("OFF", 128 if bf else 1024)]
     tl = _k0(inputs=[idx], template=[("VT", VT), ("TK", T * k)], grid=(T * k, 1, 1), threadgroup=(min(T * k, 256), 1, 1),
              output_shapes=[(T * k * (VT + 1),)], output_dtypes=[mx.uint32])[0]
-    h = _k1e(inputs=[x, gq, gs, gb, uq, us, ub, idx, tl], template=tm + [("NR", F), ("NK", D), ("SGK", SGK_UP), ("NSMALL", NSMALL), ("RS", 8 // SGK_UP)],
+    h = _k1e(inputs=[x, gq, gs, gb, uq, us, ub, idx, tl], template=tm + [("NR", F), ("NK", D), ("SGK", SGK_UP), ("MR", 2), ("NSMALL", NSMALL), ("RS", 8 // SGK_UP)],
              grid=(32 * SGK_UP * F // 8, T * k, 1), threadgroup=(32 * SGK_UP, 1, 1),
              output_shapes=[(T * k, F)], output_dtypes=[x.dtype])[0]
     lpr = _lpr(F // 32)
     sgk = max(1, lpr // (4 * R_DOWN))
     lpr = max(lpr, 4 * sgk)  # RS = 8 / sgk rows must fill 32 / lpr row groups
-    yp = _k2e(inputs=[h, dq, ds, db, idx, wts.flatten(), tl], template=tm + [("NR", D), ("NK", F), ("SGK", sgk), ("NSMALL", NSMALL), ("RS", 8 // sgk), ("LPR", lpr)],
+    yp = _k2e(inputs=[h, dq, ds, db, idx, wts.flatten(), tl], template=tm + [("NR", D), ("NK", F), ("SGK", sgk), ("MR", 1), ("NSMALL", NSMALL), ("RS", 8 // sgk), ("LPR", lpr)],
               grid=(32 * sgk * D // 8, T * k, 1), threadgroup=(32 * sgk, 1, 1),
               output_shapes=[(T * k, D)], output_dtypes=[mx.float32])[0]
     return _k3(inputs=[yp], template=[("T", x.dtype), ("D", D), ("K", k), ("NT", T)],
