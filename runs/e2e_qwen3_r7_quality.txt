@@ -1,0 +1,12 @@
+stock    PPL 30.8032
+variant  PPL 30.8239
+fp32     PPL 30.9017
+stock   vs fp32   : top-1 agreement  97.00%  mean |dNLL| 0.0742
+variant vs fp32   : top-1 agreement  96.63%  mean |dNLL| 0.0720
+stock   vs variant: top-1 agreement  97.38%  mean |dNLL| 0.0739
+stock    PPL 30.8032
+variant  PPL 30.7314
+fp32     PPL 30.6288
+stock   vs fp32   : top-1 agreement  95.22%  mean |dNLL| 0.0861
+variant vs fp32   : top-1 agreement  96.07%  mean |dNLL| 0.0747
+stock   vs variant: top-1 agreement  96.07%  mean |dNLL| 0.0852

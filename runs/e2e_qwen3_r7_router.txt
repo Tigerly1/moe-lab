@@ -1,0 +1,20 @@
+Fetching 12 files:   0%|          | 0/12 [00:00<?, ?it/s]Fetching 12 files: 100%|██████████| 12/12 [00:00<00:00, 2790.00it/s]
+guard: probe min 239 GB/s vs best 242 on Apple M4 Pro (99%) -> ok
+stock   83.2 tok/s  [83.00610948303293, 83.18085990656014, 84.1656708442226]
+variant 91.0 tok/s  [88.3800686458487, 90.98454721127013, 91.96687669759115]
+speedup 1.094x | greedy tokens identical: 44/512 (first diff at 22)
+Fetching 12 files:   0%|          | 0/12 [00:00<?, ?it/s]Fetching 12 files: 100%|██████████| 12/12 [00:00<00:00, 3170.50it/s]
+guard: probe min 236 GB/s vs best 242 on Apple M4 Pro (97%) -> ok
+stock   84.4 tok/s  [84.44204404038804, 84.04858418538787, 84.4894294517601]
+variant 97.7 tok/s  [97.73595084124577, 97.54373012754589, 98.92816071713932]
+speedup 1.157x | greedy tokens identical: 12/512 (first diff at 2)
+Fetching 12 files:   0%|          | 0/12 [00:00<?, ?it/s]Fetching 12 files: 100%|██████████| 12/12 [00:00<00:00, 2288.84it/s]
+guard: probe min 230 GB/s vs best 242 on Apple M4 Pro (95%) -> ok
+stock   84.4 tok/s  [84.51732675574515, 84.40152641448306, 84.39973917572537]
+variant 91.5 tok/s  [91.51639243800368, 91.40650465776156, 91.78577654481406]
+speedup 1.084x | greedy tokens identical: 44/512 (first diff at 22)
+Fetching 12 files:   0%|          | 0/12 [00:00<?, ?it/s]Fetching 12 files: 100%|██████████| 12/12 [00:00<00:00, 2888.80it/s]
+guard: probe min 237 GB/s vs best 242 on Apple M4 Pro (98%) -> ok
+stock   84.4 tok/s  [84.39601188480506, 84.21083448876773, 84.3766434154052]
+variant 97.8 tok/s  [97.81927497283831, 97.2493002192254, 98.67441190169164]
+speedup 1.159x | greedy tokens identical: 12/512 (first diff at 2)
