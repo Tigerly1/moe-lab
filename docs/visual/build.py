@@ -111,6 +111,35 @@ def fig_reads():
     return "".join(s)
 
 
+# ---------- figure 3b: picks vs distinct experts (pigeonhole) ----------
+def fig_overlap():
+    W, H, x0, x1, y0, y1 = 680, 300, 60, 650, 240, 24
+    E, K = 128, 8
+    Bs = [1, 2, 4, 8, 16, 32]
+    picks = [b * K for b in Bs]
+    uniq = [E * (1 - (1 - K / E) ** b) for b in Bs]
+    xs = {b: x0 + (x1 - x0) * i / (len(Bs) - 1) for i, b in enumerate(Bs)}
+    ys = lambda v: y0 - (y0 - y1) * v / 256  # noqa: E731
+    s = [f'<svg viewBox="0 0 {W} {H}" role="img" aria-label="Wybory ekspertów a liczba różnych ekspertów przy losowym routingu">']
+    for v in (0, 64, 128, 192, 256):
+        s.append(f'<line x1="{x0}" y1="{ys(v):.0f}" x2="{x1}" y2="{ys(v):.0f}" class="{"grid strong" if v == 128 else "grid"}"/>'
+                 f'<text x="{x0 - 8}" y="{ys(v) + 4:.0f}" class="tick" text-anchor="end">{v}</text>')
+    s.append(f'<text x="{x0 + 4}" y="{ys(128) - 6:.0f}" class="tick">wszystkich ekspertów: 128</text>')
+    for b, x in xs.items():
+        s.append(f'<text x="{x:.0f}" y="{y0 + 18}" class="tick" text-anchor="middle">{b}</text>')
+    s.append(f'<text x="{(x0 + x1) / 2:.0f}" y="{y0 + 36}" class="tick" text-anchor="middle">zapytań naraz</text>')
+    for b, pk, u in zip(Bs, picks, uniq):
+        x = xs[b]
+        s.append(f'<rect x="{x - 15:.0f}" y="{ys(pk):.1f}" width="30" height="{y0 - ys(pk):.1f}" rx="2" class="b1"/>'
+                 f'<rect x="{x - 9:.0f}" y="{ys(u):.1f}" width="18" height="{y0 - ys(u):.1f}" rx="2" class="mem"/>')
+        if b >= 8:
+            s.append(f'<text x="{x:.0f}" y="{ys(pk) - 6:.0f}" class="val" text-anchor="middle">{pk} / {u:.0f}</text>')
+    s.append(f'<rect x="{x0}" y="{H - 16}" width="12" height="10" rx="2" class="b1"/><text x="{x0 + 18}" y="{H - 7}" class="tick">wybory (zapytania × 8)</text>'
+             f'<rect x="{x0 + 190}" y="{H - 16}" width="12" height="10" rx="2" class="mem"/><text x="{x0 + 208}" y="{H - 7}" class="tick">różni eksperci, routing losowy (do przeczytania)</text>')
+    s.append("</svg>")
+    return "".join(s)
+
+
 # ---------- figure 4: % of floor vs T ----------
 def fig_floor():
     W, H, x0, x1, y0, y1 = 680, 300, 60, 650, 250, 30
@@ -210,7 +239,7 @@ def fig_universal():
 
 
 html = open(f"{sys.argv[3]}").read()
-for k, f in {"FIG_WALL": fig_wall, "FIG_MOE": fig_moe, "FIG_READS": fig_reads, "FIG_FLOOR": fig_floor,
+for k, f in {"FIG_WALL": fig_wall, "FIG_MOE": fig_moe, "FIG_READS": fig_reads, "FIG_OVERLAP": fig_overlap, "FIG_FLOOR": fig_floor,
              "FIG_LOAD": fig_load, "FIG_UP": fig_upstream, "FIG_UNI": fig_universal}.items():
     html = html.replace("{{" + k + "}}", f())
 assert "{{" not in html
