@@ -19,7 +19,7 @@ from mlx_lm.sample_utils import make_sampler
 
 from .mlx_backend import load_variant
 
-MAX_T = 4
+MAX_T = 256  # measured crossover: our kernels win up to T=256, parity at T=512 (runs/crossover_*.json)
 PROMPT = "Explain, step by step, how a mixture-of-experts transformer layer routes tokens to experts."
 
 

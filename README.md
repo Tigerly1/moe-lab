@@ -31,6 +31,7 @@ Production kernels:
 | int4 dispatcher, Qwen3 | 1.20 [1.19, 1.21] | 1.75 [1.63, 1.83] | 2.02 [1.90, 2.13] | 2.46 [2.40, 2.53] |
 | MXFP4, Qwen3 | 1.26 [1.25, 1.27] | 1.76 [1.68, 1.80] | 2.01 [1.90, 2.08] | 2.37 [2.32, 2.42] |
 
+- **Crossover (RQ1):** our kernels win up to T=256 and reach parity with mlx-lm's sorted grouped GEMM at T=512. Whole-model 32-token chunks (short prefill or batch): **1.86×**.
 - **Clean held-out shape (Qwen3-235B, uniform routing):** int4 1.06–1.26×, MXFP4 1.07–1.23×. Partially seen shapes: Mixtral up to 1.82× and DeepSeek-V2-Lite up to 1.42× (MXFP4).
 - **T=1 is at the memory wall.** With non-repeating routing our GEMV reads at 94% (Qwen3), 100% (gpt-oss) and ~103% (Mixtral) of 250 GB/s. mlx-lm reaches 77% on Qwen3.
 - **Mechanism at T=1:**

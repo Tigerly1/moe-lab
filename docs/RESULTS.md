@@ -365,6 +365,26 @@ The reviewer read code, re-ran tests and scripts, and spot-checked ~15 numbers a
    - **Remaining limit:** the int4 `tiles_v2` MMA path forms dequantized weights in half. Scales below ~6e-8 would flush to zero; the real Qwen3 minimum is 8.6e-6, so this does not occur today.
 7. **Framing:** the README now states that free-running speculative decoding is itself slower than plain decoding on this setup; the verify-step gain applies to the verify step only.
 
+### RQ1 closed: crossover vs mlx-lm as T grows (`runs/crossover_q4_qwen3_*.json`, fresh seeds 2000+)
+Layer level, int4 dispatcher vs the real mlx-lm path, Qwen3 shapes, 4 launches × 3 rounds × 4 windows, CI resampled by launch:
+
+| T | 16 | 32 | 64 | 128 | 256 | 512 |
+|---|---|---|---|---|---|---|
+| real traces | 1.98 | **2.45** | 1.61 | 1.34 | 1.12 | **1.00** [1.00, 1.02] |
+| uniform | 1.33 | 1.55 | **1.93** | 1.36 | 1.09 | **0.99** [0.99, 1.00] |
+
+**Crossover:**
+- Our kernels win up to T=256 and reach parity at T=512. That is where MLX's sorted grouped GEMM is efficient and the layer becomes compute-bound (the analytic ridge for Qwen3 int4 on the M4 Pro is T*≈157 under uniform routing).
+- `e2e.MAX_T` now defaults to 256.
+
+**Full model, fixed text in chunks** (short prefill / batch of tokens), Qwen3-30B-A3B-4bit, `runs/e2e_prefill_chunks_qwen3.json`:
+
+| chunk | 32 | 64 | 128 | 256 |
+|---|---|---|---|---|
+| stock tok/s | 237.5 | 387.0 | 494.6 | 595.8 |
+| ours tok/s | 441.3 | 528.6 | 593.5 | 644.0 |
+| speedup | **1.86×** | 1.37× | 1.20× | 1.08× |
+
 ## Open problems / next steps
 1. ~~Small-batch + skewed routing~~ → solved by `metal_q4_tiles_mma` (round 1). Remaining: gpt-oss (d % 128 ≠ 0) tail path, T=2 with uniform routing (round 3 running).
 2. **Regime dispatcher:** v31 for T ≤ 16, sorted `gather_qmm` above. The crossover sits around T≈16–32 on Qwen3 (RQ1).
