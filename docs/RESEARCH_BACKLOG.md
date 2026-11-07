@@ -1,0 +1,26 @@
+# Research backlog (round 8+), ranked by expected value
+
+Rules:
+- Expected value = P(success) × impact ÷ cost.
+- Nothing starts without a falsifiable claim, a kill criterion and the file that will prove it.
+- Agents get one narrow question each and never touch the GPU; GPU work runs serially, one job at a time.
+- A result counts only after an independent re-measurement (`moelab.compare`, or ≥2 process launches for e2e).
+
+| # | claim to establish | P | impact | cost | owner | kill criterion | evidence file | status |
+|---|---|---|---|---|---|---|---|---|
+| 1 | Concurrent requests (mlx-lm BatchGenerator, B=8–32) get 1.2–1.6× throughput on 3 MoE models | 0.9 | high: the practical use case | 1 h GPU | me | <1.1× at B=32 on 2 of 3 models | `runs/r8/batch_*` | running |
+| 2 | mlx-lm's bf16 router softmax decides ~9% of Qwen3 expert picks by arbitrary ties; a one-line fp32 fix removes them at ~0 cost | 0.8 | high: an upstream fix for every MLX user of 7 MoE families | 0.5 h GPU + draft | me (+ agent B for prior art) | the fix changes cost >5% or other models show <1% ties | `runs/r8/router_fix_*.json` | queued |
+| 3 | The "hot expert per document" observation is known or new; decide the wording and citations | 0.95 | medium: honesty of the thesis | agent | agent A | none (pure check) | `docs/related_work_r8.md` | **done**: partly known (locality, domain skew); the single per-document hot expert quantification appears unpublished; wording fixed |
+| 4 | Position the batched result against llama.cpp Metal / NVIDIA small-batch MoE | 0.9 | medium: tells whether #1 is notable | agent | agent C | none | agent report (in `docs/related_work_r8.md` after verification) | **done**: no published B=1–32 MoE batched sweep on Apple; technique (grouping by expert) is standard on GPUs (vLLM fused_moe, llama.cpp map0+mul_mm_id) → claim = bringing it to MLX with measured serving gains |
+| 5 | Explain why our MoE time grows with context (MLX Metal scheduling) | 0.4 | low–medium: closes an open thesis question | agent + ≤1 h GPU tests it proposes | agent D, then me | no proposed test separates the mechanisms | agent report + `runs/r8/longctx_*` | running |
+| 6 | Host-side cost per custom-kernel call (Python template/dispatch) is a measurable part of single-stream time; caching it gains ≥2% e2e | 0.5 | medium: single-stream gain | 1 h | me | <1% of step time is host overhead | `runs/r8/host_overhead.json` | **killed**: graph build per token is 0.32 ms ours vs 0.49 ms stock (48 layers), <4% of a step and largely overlapped |
+| 7 | Fusing the router tail into the gate GEMV (one dispatch) adds ≥2% e2e on Qwen3 | 0.35 | medium | 3–4 h | me | <1% in isolated chain | — | idea |
+| 8 | Same gains on a second Apple chip (M2, 16 GB) | 0.7 | high for generality | user runs `scripts/portability_m2.sh` | user | — | `runs/portability_*` | waiting on user |
+| 9 | NVIDIA counterpart (title promises it) | 0.6 | high for the thesis | needs `modal setup` | user, then me | — | — | waiting on user |
+| 11 | Baseline is current: re-run headline on latest mlx-lm 0.32.2 (MLX 0.32.4 already includes gather_qmm PR #4572) | 0.9 | high: honesty | 1 h GPU | me | — | `runs/r8/latest/` | queued |
+| 10 | Upstream MLX kernel fix for the K%512 cliff | 0.3 (merge) | very high if merged | needs Xcode / Metal compiler | user (install), then me | maintainers reject the approach (cf. PR #4598) | — | blocked |
+
+Not doing (low expected value):
+- more kernel micro-tuning at T=1 (already at 93–100% of the bandwidth floor);
+- a crossover push beyond load 24 (the fallback is already parity);
+- a speculative-decoding product (on this setup, free-running spec decoding with a 0.6B draft is slower than plain decode).

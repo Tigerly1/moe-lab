@@ -43,7 +43,9 @@ def main():
     ap.add_argument("--ctx", type=int, nargs="+", default=[128, 1024, 4096, 8192])
     ap.add_argument("--steps", type=int, default=48); ap.add_argument("--rounds", type=int, default=3)
     ap.add_argument("--out", default=None)
+    ap.add_argument("--fused-router", action="store_true")
     a = ap.parse_args()
+    e2e.FUSED_ROUTER = a.fused_router
     model, tok = load(a.model)
     cls, n = e2e.patch(model, load_variant(a.variant))
     patched = cls.__call__

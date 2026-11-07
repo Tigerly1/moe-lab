@@ -12,3 +12,4 @@ autoresearch/results.tsv
 !runs/*.json
 .claude/
 !runs/routing_*.npz
+.venv-latest/
