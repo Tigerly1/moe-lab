@@ -11,7 +11,7 @@ import numpy as np
 
 from . import mlx_backend as be
 from .guard import probe, verdict, report
-from .shapes import SHAPES
+from .shapes import SHAPES, MoEShape
 from .sweep import PAIRS
 
 GRID_SHAPES = ["qwen3-30b-a3b", "deepseek-v2-lite", "olmoe-1b-7b", "gpt-oss-20b", "qwen3-235b-a22b", "abl-gptoss-3072"]
@@ -23,12 +23,21 @@ def main():
     ap.add_argument("--pair", default="q4", choices=list(PAIRS))
     ap.add_argument("--shapes", nargs="+", default=GRID_SHAPES)
     ap.add_argument("--max-t", type=int, default=512)
+    ap.add_argument("--dims", nargs="*", default=[], help="extra custom shapes d,f,E,k (replace --shapes if given)")
     ap.add_argument("--out", default=None)
     a = ap.parse_args()
     A, B = (be.load_variant(p) for p in PAIRS[a.pair])
+    # measure the CUSTOM kernels everywhere (round-7 audit: with the load fallback in the dispatcher, the grid
+    # would otherwise compare mlx-lm with itself above the threshold it is meant to set)
+    if hasattr(B, "custom_wins"):
+        B.custom_wins = lambda *z: True
+    if hasattr(B, "LOAD_MAX"):
+        B.LOAD_MAX = 1e9
     probes, rows = [probe()], []
-    for name in a.shapes:
-        sh = SHAPES[name]
+    shapes = [MoEShape("d{}f{}E{}k{}".format(*map(int, x.split(","))), *map(int, x.split(","))) for x in a.dims] \
+        or [SHAPES[n] for n in a.shapes]
+    for sh in shapes:
+        name = sh.name
         w = be.make_weights(sh, "bfloat16")
         sa, sb = A.prepare(*w), B.prepare(*w)
         mx.eval(sa, sb)

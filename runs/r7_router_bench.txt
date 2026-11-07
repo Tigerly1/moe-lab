@@ -1,0 +1,91 @@
+== Q plain
+Fetching 12 files:   0%|          | 0/12 [00:00<?, ?it/s]Fetching 12 files: 100%|██████████| 12/12 [00:00<00:00, 5655.24it/s]
+guard: probe min 236 GB/s vs best 242 on Apple M4 Pro (97%) -> ok
+stock   89.1 tok/s  [87.70308594668667, 89.13605316754891, 91.02389706196533]
+variant 99.3 tok/s  [95.47577682152549, 99.33231354518692, 99.45843313576187]
+speedup 1.114x | greedy tokens identical: 44/512 (first diff at 22)
+== Q fused
+Fetching 12 files:   0%|          | 0/12 [00:00<?, ?it/s]Fetching 12 files: 100%|██████████| 12/12 [00:00<00:00, 2735.86it/s]
+guard: probe min 240 GB/s vs best 242 on Apple M4 Pro (99%) -> ok
+stock   91.4 tok/s  [92.07250901342603, 91.33762932380573, 91.38979265063449]
+variant 107.2 tok/s  [107.48908601940386, 107.18881390555362, 107.06556861757502]
+speedup 1.173x | greedy tokens identical: 12/512 (first diff at 2)
+== Q verify plain
+Fetching 12 files:   0%|          | 0/12 [00:00<?, ?it/s]Fetching 12 files: 100%|██████████| 12/12 [00:00<00:00, 2239.65it/s]
+verify chunk=4: stock 126.9 tok/s  variant 155.6 tok/s  speedup 1.226x  (248 steps, rounds {'stock': [127.12139433195011, 126.82100782965405, 126.9168398251434], 'variant': [155.81668738396428, 155.60605724321306, 155.613816462188]})
+verify chunk=16: stock 194.8 tok/s  variant 288.6 tok/s  speedup 1.481x  (62 steps, rounds {'stock': [194.84989178962442, 194.80693063337662, 194.74355185808693], 'variant': [288.53900604493947, 288.5924943834185, 288.83560136517656]})
+verify chunk=32: stock 237.7 tok/s  variant 435.3 tok/s  speedup 1.831x  (31 steps, rounds {'stock': [237.72917117547573, 237.6825899370615, 237.44184656446387], 'variant': [435.1829713098753, 435.34479708548724, 435.25576047140976]})
+== Q verify fused
+Fetching 12 files:   0%|          | 0/12 [00:00<?, ?it/s]Fetching 12 files: 100%|██████████| 12/12 [00:00<00:00, 3049.48it/s]
+verify chunk=4: stock 122.2 tok/s  variant 154.1 tok/s  speedup 1.261x  (248 steps, rounds {'stock': [123.04207514917849, 119.98953961197681, 122.23230818521337], 'variant': [158.05864575484566, 150.88885628755955, 154.14338525138388]})
+verify chunk=16: stock 187.4 tok/s  variant 275.7 tok/s  speedup 1.471x  (62 steps, rounds {'stock': [187.4419056341316, 187.89867204247054, 187.1609535225395], 'variant': [274.1899437048607, 278.6302434646742, 275.7282144199312]})
+verify chunk=32: stock 227.4 tok/s  variant 406.4 tok/s  speedup 1.787x  (31 steps, rounds {'stock': [226.35801400923194, 229.63254878026277, 227.36149477730459], 'variant': [397.685805362391, 421.80385027124544, 406.390913500031]})
+== Q quality fused
+Fetching 12 files:   0%|          | 0/12 [00:00<?, ?it/s]Fetching 12 files: 100%|██████████| 12/12 [00:00<00:00, 2783.52it/s]
+stock    PPL 30.8032
+variant  PPL 30.7314
+fp32     PPL 30.6288
+stock   vs fp32   : top-1 agreement  95.22%  mean |dNLL| 0.0861
+variant vs fp32   : top-1 agreement  96.07%  mean |dNLL| 0.0747
+stock   vs variant: top-1 agreement  96.07%  mean |dNLL| 0.0852
+== G plain
+Fetching 10 files:   0%|          | 0/10 [00:00<?, ?it/s]Fetching 10 files: 100%|██████████| 10/10 [00:00<00:00, 2572.72it/s]
+guard: probe min 237 GB/s vs best 242 on Apple M4 Pro (98%) -> ok
+stock   73.9 tok/s  [73.87095166762536, 73.90321565616304, 73.60582199058271]
+variant 79.6 tok/s  [79.58389591087726, 79.34536150379277, 79.71865905079885]
+speedup 1.077x | greedy tokens identical: 29/512 (first diff at 24)
+== G fused
+Fetching 10 files:   0%|          | 0/10 [00:00<?, ?it/s]Fetching 10 files: 100%|██████████| 10/10 [00:00<00:00, 2498.10it/s]
+guard: probe min 239 GB/s vs best 242 on Apple M4 Pro (99%) -> ok
+stock   73.9 tok/s  [73.83132901219821, 73.87979090649264, 73.91282996324902]
+variant 80.7 tok/s  [80.71424434621636, 81.44124060469348, 80.44624990424323]
+speedup 1.093x | greedy tokens identical: 103/512 (first diff at 92)
+== G verify plain
+Fetching 10 files:   0%|          | 0/10 [00:00<?, ?it/s]Fetching 10 files: 100%|██████████| 10/10 [00:00<00:00, 2456.98it/s]
+verify chunk=4: stock 124.1 tok/s  variant 158.6 tok/s  speedup 1.277x  (248 steps, rounds {'stock': [124.26288071804886, 124.13799618786958, 123.94866717090996], 'variant': [158.53787169261727, 158.58150232536744, 158.56101193906244]})
+verify chunk=16: stock 172.4 tok/s  variant 292.4 tok/s  speedup 1.696x  (62 steps, rounds {'stock': [172.43733228570733, 172.44428666396286, 172.5423554212818], 'variant': [292.38004040336483, 292.41117823347304, 292.4935632799617]})
+verify chunk=32: stock 280.6 tok/s  variant 426.9 tok/s  speedup 1.521x  (31 steps, rounds {'stock': [280.60124991127094, 280.37085687735913, 280.59633226397824], 'variant': [426.8842704181538, 426.838603128153, 426.9605043748806]})
+== G verify fused
+Fetching 10 files:   0%|          | 0/10 [00:00<?, ?it/s]Fetching 10 files: 100%|██████████| 10/10 [00:00<00:00, 1994.06it/s]
+verify chunk=4: stock 123.8 tok/s  variant 160.9 tok/s  speedup 1.299x  (248 steps, rounds {'stock': [123.83395284852928, 123.83775964015597, 121.26757375890978], 'variant': [160.87088556649104, 161.10957724922514, 160.6838284923545]})
+verify chunk=16: stock 169.9 tok/s  variant 290.1 tok/s  speedup 1.708x  (62 steps, rounds {'stock': [169.8514224442194, 171.53459111928078, 169.1957563935498], 'variant': [285.32018991410104, 293.6080172566347, 290.0578576053018]})
+verify chunk=32: stock 272.7 tok/s  variant 420.6 tok/s  speedup 1.543x  (31 steps, rounds {'stock': [272.6634140424, 276.23955538795246, 271.6609778954817], 'variant': [420.6006554693881, 424.46534992609577, 418.61248733039434]})
+== G quality fused
+Fetching 10 files:   0%|          | 0/10 [00:00<?, ?it/s]Fetching 10 files: 100%|██████████| 10/10 [00:00<00:00, 2709.32it/s]
+stock    PPL 181.1675
+variant  PPL 177.3262
+fp32     PPL 169.2099
+stock   vs fp32   : top-1 agreement  91.26%  mean |dNLL| 0.1579
+variant vs fp32   : top-1 agreement  92.25%  mean |dNLL| 0.1326
+stock   vs variant: top-1 agreement  91.86%  mean |dNLL| 0.1241
+== D plain
+Fetching 10 files:   0%|          | 0/10 [00:00<?, ?it/s]Fetching 10 files: 100%|██████████| 10/10 [00:00<00:00, 2505.71it/s]
+guard: probe min 239 GB/s vs best 242 on Apple M4 Pro (99%) -> ok
+stock   123.5 tok/s  [123.45593775303033, 123.52646087839223, 123.3557900585486]
+variant 132.9 tok/s  [132.90681076551678, 132.9203972746948, 132.92533785461566]
+speedup 1.077x | greedy tokens identical: 225/225 (first diff at None)
+== D fused
+Fetching 10 files:   0%|          | 0/10 [00:00<?, ?it/s]Fetching 10 files: 100%|██████████| 10/10 [00:00<00:00, 2640.75it/s]
+guard: probe min 240 GB/s vs best 242 on Apple M4 Pro (99%) -> ok
+stock   123.4 tok/s  [123.27190202177127, 123.41668109000824, 123.45979333028869]
+variant 138.4 tok/s  [131.73731788862958, 138.41133066613799, 138.44237301154155]
+speedup 1.121x | greedy tokens identical: 225/225 (first diff at None)
+== D verify plain
+Fetching 10 files:   0%|          | 0/10 [00:00<?, ?it/s]Fetching 10 files: 100%|██████████| 10/10 [00:00<00:00, 2305.20it/s]
+verify chunk=4: stock 182.4 tok/s  variant 207.0 tok/s  speedup 1.135x  (248 steps, rounds {'stock': [182.506806894655, 182.28687615692849, 182.4484457270215], 'variant': [207.3943110322825, 205.85928372503653, 207.00571217913244]})
+verify chunk=16: stock 254.1 tok/s  variant 339.7 tok/s  speedup 1.337x  (62 steps, rounds {'stock': [254.2402881472826, 254.1325873161394, 254.0938507495906], 'variant': [339.7310157414725, 339.7820468690256, 339.7437756377726]})
+verify chunk=32: stock 320.7 tok/s  variant 521.1 tok/s  speedup 1.625x  (31 steps, rounds {'stock': [320.381706382513, 320.9736113260059, 320.67153097460005], 'variant': [518.2379917934328, 522.0926230220248, 521.1048904186275]})
+== D verify fused
+Fetching 10 files:   0%|          | 0/10 [00:00<?, ?it/s]Fetching 10 files: 100%|██████████| 10/10 [00:00<00:00, 2117.37it/s]
+verify chunk=4: stock 182.1 tok/s  variant 214.5 tok/s  speedup 1.178x  (248 steps, rounds {'stock': [182.09361954420268, 182.14413947253897, 182.30285115591224], 'variant': [214.5439069249287, 214.6400217667926, 214.21255105911456]})
+verify chunk=16: stock 253.4 tok/s  variant 338.1 tok/s  speedup 1.334x  (62 steps, rounds {'stock': [253.4085488309965, 254.50268138669728, 252.98063531578723], 'variant': [338.0871249351826, 340.9171603173442, 336.46915199986114]})
+verify chunk=32: stock 315.0 tok/s  variant 513.8 tok/s  speedup 1.631x  (31 steps, rounds {'stock': [315.0327965990708, 319.7600167034813, 313.3998579318359], 'variant': [513.800034974847, 520.9428521092611, 511.2306802841099]})
+== D quality fused
+Fetching 10 files:   0%|          | 0/10 [00:00<?, ?it/s]Fetching 10 files: 100%|██████████| 10/10 [00:00<00:00, 2025.06it/s]
+stock    PPL 41.3547
+variant  PPL 41.3941
+fp32     PPL 41.3153
+stock   vs fp32   : top-1 agreement  98.04%  mean |dNLL| 0.0353
+variant vs fp32   : top-1 agreement  98.30%  mean |dNLL| 0.0368
+stock   vs variant: top-1 agreement  98.64%  mean |dNLL| 0.0243
+done

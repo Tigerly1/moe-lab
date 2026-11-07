@@ -462,12 +462,18 @@ def _rt(nr, rt):
     return rt
 
 
-LOAD_MAX = 8  # round 7: above 8 tokens/expert MLX gather_qmm is on par or faster (runs/grid_mxfp4.json)
+LOAD_MAX = None  # tests/grids set a number to override the policy below
+
+
+def load_max(D, F):
+    """Round 7: custom kernels up to this load (T*k/E); above it MLX's sorted gather_qmm is on par or faster.
+    Fitted on runs/grid_mxfp4.json + runs/grid_small_mxfp4.json (custom kernels forced)."""
+    return LOAD_MAX if LOAD_MAX is not None else (24 if D * F >= 3 << 19 else 8)   # small 16 -> 8: runs/r7_policy/fp4_small.json 0.989x at load 16
 
 
 def run(s, x, idx, wts):
     T, k = idx.shape
-    if T > 1 and T * k / s["g"][0].shape[0] > LOAD_MAX:
+    if T > 1 and T * k / s["g"][0].shape[0] > load_max(s["d"][0].shape[1], s["g"][0].shape[1]):
         return gather_moe(s, x, idx, wts, GS, BITS, MODE)
     (gq, gs), (uq, us), (dq, ds) = s["g"], s["u"], s["d"]
     F, D = gq.shape[1], dq.shape[1]

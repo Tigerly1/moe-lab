@@ -1,12 +1,26 @@
 from moelab import guard
 
 
-def test_verdict_self_calibrates_and_flags(tmp_path, monkeypatch):
+def test_verdict_uses_recent_p90(tmp_path, monkeypatch):
     monkeypatch.setattr(guard, "PATH", str(tmp_path / "p.json"))
-    assert not guard.verdict([200.0, 199.0])["contended"]       # first run sets the record
-    assert guard.verdict([150.0])["contended"]                  # 75% of record
-    assert guard.verdict([250.0])["probe_best_gbs"] == 250.0    # record only goes up
-    assert guard.verdict([200.0])["contended"]                  # 80% of new record
+    monkeypatch.setattr(guard, "key", lambda: "chip|ac")
+    assert guard.verdict([230.0, 231.0])["status"] == "calibrating"
+    for _ in range(3):
+        guard.verdict([235.0, 236.0])
+    assert guard.verdict([232.0])["status"] == "ok"
+    v = guard.verdict([190.0])                               # ~81% of p90
+    assert v["status"] == "contended" and v["contended"]
+    for _ in range(30):                                      # history is a window: a slower regime becomes the norm
+        guard.verdict([200.0, 201.0])
+    assert guard.verdict([199.0])["status"] == "ok"
+
+
+def test_legacy_float_record_is_ignored(tmp_path, monkeypatch):
+    p = tmp_path / "p.json"
+    p.write_text('{"chip|ac": 242.0}')
+    monkeypatch.setattr(guard, "PATH", str(p))
+    monkeypatch.setattr(guard, "key", lambda: "chip|ac")
+    assert guard.verdict([200.0])["status"] == "calibrating"
 
 
 def test_probe_is_positive():

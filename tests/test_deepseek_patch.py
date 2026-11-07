@@ -49,10 +49,17 @@ def test_deepseek_patch_matches_stock(topk_method, monkeypatch):
     assert float(np.mean(np.array(a.argmax(-1)) == np.array(b.argmax(-1)))) >= 0.85
 
 
-def test_deepseek_fused_router_matches_stock(monkeypatch):
+@pytest.mark.parametrize("scale", [1.0, 2.5])
+def test_deepseek_fused_router_matches_stock(scale, monkeypatch):
     monkeypatch.setattr(e2e, "MAX_T", 16)
     monkeypatch.setattr(e2e, "FUSED_ROUTER", True)
+    calls = []
+    real = e2e.topk_norm
+    monkeypatch.setattr(e2e, "topk_norm", lambda *a, **k: (calls.append(1), real(*a, **k))[1])
     m = tiny("gready")
+    for l in m.model.layers:
+        if hasattr(l.mlp, "gate"):
+            l.mlp.gate.routed_scaling_factor = scale
     cls, _ = e2e.patch(m, load_variant("moelab/variants/mlx/metal_q4_moe.py"))
 
     def run(use):
@@ -62,5 +69,6 @@ def test_deepseek_fused_router_matches_stock(monkeypatch):
         return mx.concatenate(outs, axis=1).astype(mx.float32)
 
     a, b = run(False), run(True)
+    assert calls, "fused router path never ran"
     rel = (mx.linalg.norm((a - b).flatten()) / mx.linalg.norm(a.flatten())).item()
     assert 0 < rel < 2e-2, rel

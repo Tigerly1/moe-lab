@@ -1,0 +1,6 @@
+{
+ "token_layers": 24576,
+ "differ": 2213,
+ "differ_are_bf16_ties": 2213,
+ "tokens": 512
+}

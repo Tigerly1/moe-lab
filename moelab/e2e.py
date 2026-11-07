@@ -21,7 +21,7 @@ from .mlx_backend import load_variant
 from .router import topk_norm
 
 FUSED_ROUTER = False  # round 7: moelab/router.py replaces softmax/argpartition/take/renorm (--fused-router)
-MAX_T = 256  # measured crossover: our kernels win up to T=256, parity at T=512 (runs/crossover_*.json)
+MAX_T = 256  # stock above this many tokens; below it the dispatchers' own load policy decides (round 7)
 PROMPT = "Explain, step by step, how a mixture-of-experts transformer layer routes tokens to experts."
 
 
@@ -65,6 +65,7 @@ def patch(model, mod):
 def _patch_deepseek(model, mod):
     """DeepSeek-V2/V3 MoE block: the stock MoEGate (softmax/sigmoid, group-limited top-k, routed scaling)
     is called unchanged; only the routed SwitchGLU is replaced; shared experts run stock and are added."""
+    v2 = model.model_type == "deepseek_v2"
     blocks = [l.mlp for l in model.layers if hasattr(l.mlp, "switch_mlp")]   # first layer(s) are dense
     cls = type(blocks[0])
     stock = cls.__dict__.get("_stock_call", cls.__call__)
@@ -82,7 +83,8 @@ def _patch_deepseek(model, mod):
             return stock(self, x)
         assert getattr(self, "sharding_group", None) is None, "tensor-parallel DeepSeek MoE not supported by the patch"
         g = self.gate
-        if FUSED_ROUTER and g.topk_method != "group_limited_greedy":   # mlx-lm: anything else is greedy
+        if FUSED_ROUTER and v2 and g.topk_method != "group_limited_greedy":   # mlx-lm: anything else is greedy
+            # (V3 gates use sigmoid + correction bias + noaux_tc: stays stock)
             inds, scores = topk_norm(x @ g.weight.T, g.top_k, norm=False)
             if g.routed_scaling_factor != 1.0:
                 scores = scores * g.routed_scaling_factor
@@ -114,7 +116,7 @@ def _patch_gptoss(model, mod):
         T = x.size // x.shape[-1]
         k = self.num_experts_per_tok
         if T > MAX_T or not getattr(cls, "_use_variant", False) or \
-                (T > 1 and T * k / self._variant_state["g"][0].shape[0] > 8):   # round 7 load policy
+                (T > 1 and T * k / self._variant_state["g"][0].shape[0] > 16):   # round 7 load policy (runs/grid_mxfp4.json, gpt-oss shape)
             return stock(self, x)
         if FUSED_ROUTER:
             inds, w = topk_norm(self.router(x), k)
@@ -163,17 +165,26 @@ def quality_check(model, tok, cls, variant_path):
         truth_mod = SimpleNamespace(state=var_mod.state, run=var_mod.reference)
     else:
         truth_mod = load_variant(__file__.replace("e2e.py", "variants/fp32_truth_q4.py"))
-    runs = {"stock": (False, None)}
-    runs["variant"] = (True, var_mod)
-    runs["fp32"] = (True, truth_mod)
+    fused = FUSED_ROUTER
+    # (use_variant, module, fused router). The fp32 truth always uses the STOCK router (audit round 7: a truth
+    # routed by the fused kernel made the comparison circular); with --fused-router an extra fp32 run with
+    # exact top-k routing is reported separately as "fp32_exact".
+    runs = {"stock": (False, None, False), "variant": (True, var_mod, fused), "fp32": (True, truth_mod, False)}
+    if fused:
+        runs["fp32_exact"] = (True, truth_mod, True)
     out = {}
-    for name, (use, mod) in runs.items():
+    for name, (use, mod, fr) in runs.items():
+        globals()["FUSED_ROUTER"] = fr
         if mod is not None:
             patch(model, mod)
         out[name] = teacher_forced(model, tok, cls, text, use)
-        print(f"{name:8s} PPL {np.exp(out[name][0].mean()):.4f}")
+        print(f"{name:10s} PPL {np.exp(out[name][0].mean()):.4f}")
+    globals()["FUSED_ROUTER"] = fused
     res = {"ppl": {k: float(np.exp(v[0].mean())) for k, v in out.items()}, "pairs": {}}
-    for a, b in (("stock", "fp32"), ("variant", "fp32"), ("stock", "variant")):
+    pairs = [("stock", "fp32"), ("variant", "fp32"), ("stock", "variant")]
+    if fused:
+        pairs += [("stock", "fp32_exact"), ("variant", "fp32_exact")]
+    for a, b in pairs:
         (na, ta), (nb, tb) = out[a], out[b]
         res["pairs"][f"{a}_vs_{b}"] = {"top1_agreement": float((ta == tb).mean()), "mean_abs_dnll": float(np.abs(na - nb).mean())}
         print(f"{a:7s} vs {b:7s}: top-1 agreement {100 * (ta == tb).mean():6.2f}%  mean |dNLL| {np.abs(na - nb).mean():.4f}")

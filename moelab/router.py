@@ -7,7 +7,8 @@ top-k logits, so the kernel only needs the k largest logits. Ties: lowest expert
 order is unspecified; the kernels are slot-order invariant, see tests/test_edge_cases.py).
 Without renormalization (DeepSeek-V2 "greedy", norm_topk_prob=False) the weights are the full-softmax
 probabilities of the chosen experts: NORM=false computes the denominator over all E first.
-Any E <= 1024 (padding lanes hold -inf), k <= min(E, 32).
+Any E <= 1024 (padding lanes hold -inf), k <= min(E, 32). NaN logits count as -inf; with fewer than k
+finite logits the remaining slots get the lowest unused ids and weight 0 (stock mlx-lm would propagate NaN).
 """
 import mlx.core as mx
 
@@ -18,7 +19,8 @@ SRC = """
     float v[J];
     for (int j = 0; j < J; ++j) {
         uint e = uint(j * 32) + lane;
-        v[j] = e < uint(E) ? float(logits[t * E + e]) : -INFINITY;
+        float l = e < uint(E) ? float(logits[t * E + e]) : -INFINITY;
+        v[j] = metal::isnan(l) ? -INFINITY : l;          // NaN logits are never selected
     }
     float m0 = -INFINITY;
     for (int j = 0; j < J; ++j) m0 = metal::max(m0, v[j]);
@@ -26,6 +28,7 @@ SRC = """
     float den = 0.f;
     if (!NORM) {
         for (int j = 0; j < J; ++j) den += v[j] == -INFINITY ? 0.f : metal::precise::exp(v[j] - m0);
+        // (all -inf/NaN: den = 0 -> NaN weights, like stock softmax)
         den = simd_sum(den);
     }
     float topv[K];
@@ -37,7 +40,17 @@ SRC = """
         }
         float m = simd_max(b);
         uint sel = simd_min(b == m ? bi : 0xFFFFFFFFu);
-        if (sel % 32 == lane) v[sel / 32] = -INFINITY;
+        if (sel == 0xFFFFFFFFu) {                         // fewer than K finite logits: lowest unused id, weight 0
+            sel = 0;
+            for (bool used = true; used; ) {
+                used = false;
+                for (int q = 0; q < r; ++q) used = used || topi[q] == sel;
+                if (used) ++sel;
+            }
+            m = -INFINITY;
+        } else if (sel % 32 == lane) {
+            v[sel / 32] = -INFINITY;
+        }
         topv[r] = m; topi[r] = sel;
     }
     float s = 0.f;
@@ -52,7 +65,7 @@ SRC = """
     }
 """
 
-_k = mx.fast.metal_kernel(name="router_topk_norm_v3", input_names=["logits"], output_names=["idx", "wts"], source=SRC)
+_k = mx.fast.metal_kernel(name="router_topk_norm_v4", input_names=["logits"], output_names=["idx", "wts"], source=SRC)
 
 
 def topk_norm(logits, k, norm=True):

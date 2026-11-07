@@ -1,0 +1,24 @@
+T=192  A   4577.2us  B   4279.0us  B is 1.070x  [95% CI 1.064-1.082, by launch]  err A 6.3e-03 B 3.5e-03
+T=256  A   5922.8us  B   5439.8us  B is 1.089x  [95% CI 1.082-1.095, by launch]  err A 6.4e-03 B 3.5e-03
+T=384  A   8186.1us  B   7767.9us  B is 1.054x  [95% CI 1.047-1.058, by launch]  err A 6.4e-03 B 3.4e-03
+T=512  A  10052.0us  B  10050.9us  B is 1.000x  [95% CI 1.000-1.000, by launch]  err A 6.4e-03 B 6.4e-03
+guard: probe min 238 GB/s vs p90 243 for Apple M4 Pro|ac (98%) -> ok
+T=256  A  22749.7us  B  20234.9us  B is 1.124x  [95% CI 1.115-1.141, by launch]  err A 6.4e-03 B 3.4e-03
+T=384  A  32748.7us  B  29774.5us  B is 1.100x  [95% CI 1.093-1.102, by launch]  err A 6.4e-03 B 3.4e-03
+guard: probe min 237 GB/s vs p90 242 for Apple M4 Pro|ac (98%) -> ok
+T= 64  A    439.8us  B    359.4us  B is 1.224x  [95% CI 1.215-1.229, by launch]  err A 5.6e-03 B 3.4e-03
+T= 96  A    481.4us  B    480.8us  B is 1.001x  [95% CI 0.996-1.008, by launch]  err A 5.6e-03 B 5.6e-03
+guard: probe min 235 GB/s vs p90 242 for Apple M4 Pro|ac (97%) -> ok
+T= 32  A   5198.7us  B   3865.2us  B is 1.345x  [95% CI 1.334-1.369, by launch]  err A 5.7e-03 B 3.5e-03
+T= 48  A   5285.5us  B   5287.8us  B is 1.000x  [95% CI 0.998-1.004, by launch]  err A 5.6e-03 B 5.6e-03
+guard: probe min 237 GB/s vs p90 242 for Apple M4 Pro|ac (98%) -> ok
+T= 96  A   5911.4us  B   5483.7us  B is 1.078x  [95% CI 1.054-1.082, by launch]  err A 5.6e-03 B 2.4e-03
+T=128  A   7877.9us  B   6961.7us  B is 1.132x  [95% CI 1.113-1.145, by launch]  err A 5.6e-03 B 2.4e-03
+T=192  A  10575.9us  B   9943.7us  B is 1.064x  [95% CI 1.063-1.084, by launch]  err A 5.7e-03 B 2.3e-03
+guard: probe min 236 GB/s vs p90 242 for Apple M4 Pro|ac (97%) -> ok
+T=128  A    877.2us  B    887.4us  B is 0.989x  [95% CI 0.978-0.995, by launch]  err A 6.4e-03 B 2.3e-03
+T=192  A   1180.7us  B   1179.2us  B is 1.001x  [95% CI 0.989-1.005, by launch]  err A 6.4e-03 B 6.4e-03
+guard: probe min 235 GB/s vs p90 243 for Apple M4 Pro|ac (97%) -> ok
+T=  8  A    397.6us  B    157.0us  B is 2.533x  [95% CI 2.488-2.612, by launch]  err A 6.6e-03 B 3.5e-03
+T= 32  A    359.5us  B    474.2us  B is 0.758x  [95% CI 0.757-0.765, by launch]  err A 6.0e-03 B 3.4e-03
+guard: probe min 238 GB/s vs p90 243 for Apple M4 Pro|ac (98%) -> ok

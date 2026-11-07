@@ -19,6 +19,24 @@ def mod(path):
     return _MODS[path]
 
 
+def _no_fallback(*a, **k):
+    raise AssertionError("fallback ran in forced-custom mode")
+
+
+@pytest.fixture(autouse=True, params=["default", "forced-custom"])
+def policy(request, monkeypatch):
+    """Audit (round 7): with the load fallback, many cases here reached gather_moe instead of the custom
+    kernels. 'forced-custom' disables the fallback (and fails if it runs), so every case also exercises the
+    custom kernel path; 'default' tests the shipped dispatch."""
+    if request.param == "forced-custom":
+        q4, fp4 = mod(PROD[0]), mod(PROD[1])
+        monkeypatch.setattr(q4, "custom_wins", lambda *a: True)
+        monkeypatch.setattr(fp4, "LOAD_MAX", 1e9)
+        monkeypatch.setattr(q4, "gather_moe", _no_fallback)
+        monkeypatch.setattr(fp4, "gather_moe", _no_fallback)
+    return request.param
+
+
 def check(path, shape, T, dtype="bfloat16", routing="uniform", seed=0, idx=None, wts=None, tol=None):
     m = mod(path)
     p = make_problem(shape, T, routing, seed)

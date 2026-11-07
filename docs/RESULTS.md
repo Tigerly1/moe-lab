@@ -547,58 +547,125 @@ The audit verified as sound:
 | DeepSeek e2e plain (identical 225/225) / verify 4 / 16 / 32 | +7.3% / +13.6% / +33.4% / +63.3% |
 | crossover uniform T=64/256/512 | 1.867 / 1.087 / 0.990 |
 
-## Round 7 (2026-11-07, daytime): wider and narrower testing, and what it changed
+## Round 7 (2026-11-07, daytime): wider and narrower testing, a fused router, and an audit
 
-Goal: find wrong or slower results outside the shapes the kernels were tuned on. Every flag from a quick screen was re-measured with `moelab.compare` before it counted.
+Goal: find wrong or slower results outside the shapes the kernels were tuned on, then look for the next real gain.
+Rule used throughout: a quick screen only nominates cases. A case counts only after a re-measurement with `moelab.compare` (3 process launches, CI by launch, fresh seeds). An adversarial read-only audit (fresh agent) reviewed the first version of this section; its findings and fixes are at the end.
 
 ### Harness changes
-- **GPU contention guard** (`moelab/guard.py`): every `compare`, `slope` and `e2e` run brackets itself with a 512 MB read-bandwidth probe and compares it with the best probe ever recorded on that chip (`runs/hw_probe.json`). Below 92% of that best value the run is flagged CONTENDED.
-  - Trigger: a T=1 slope run with Chrome and the display active gave 80% of floor instead of 93%, while the speedup barely moved (1.196× vs 1.222×).
-  - Lesson: A/B ratios are robust to contention; absolute "% of floor" numbers are not.
+- **GPU contention guard** (`moelab/guard.py`):
+  - Every `compare`, `slope`, `e2e`, `sweep` and `grid` run brackets itself with a 512 MB read-bandwidth probe.
+  - The probe is compared with the 90th percentile of the last 40 probes for the same (chip, power source); below 92% the run is flagged CONTENDED.
+  - With fewer than 5 probes in history the verdict is "calibrating". The v1 design used the best probe ever seen; the audit noted that this drifts upward with noise.
+  - Why: a T=1 slope run with Chrome and the display active gave 80% of floor instead of 93%, while the A/B ratio barely moved (1.196× vs 1.222×). Ratios are robust to contention; absolute "% of floor" numbers are not.
   - Check: a concurrent matmul loop drops the probe from ~236 to 8 GB/s and the guard fires.
-- **Narrow edge cases** (`tests/test_edge_cases.py`, 100 tests):
-  - T at every dispatch boundary (1, 2, 3, 4, 5, 7, 8, 9, 15, 17, 31, 63, 65, 127, 129, 257);
-  - d or f not a multiple of 128, plus k=1, k=E and E=1;
-  - zero or unnormalized combine weights (an all-zero row must give exactly zero);
-  - every token routed to the same experts;
-  - slot-order invariance;
-  - batch consistency (token t inside T=16 matches T=1);
-  - 100× activations.
-  - All pass. Mutation check: swapping one expert of one token raises the error 6–15× over the clean run, so 2–5× above the tolerance. A 3% change of a single combine weight is caught at T ≤ 3 but not at T=17.
-- **Wide random sweep** (`moelab/sweep.py`): 60 random shapes per run (d 512–5120, f 256–4096, E 8–256, k 1–8, T 1–128, bf16/fp16, uniform/zipf/one-hot routing).
-- **Targeted grid** (`moelab/grid.py`): six real-model shapes × T chosen by load = T·k/E (average tokens per expert, 1–32).
+  - Known weakness: the history is a sliding window, so long sustained contention becomes the norm after ~7 runs (documented in `tests/test_guard.py`).
+- **Narrow edge cases** (`tests/test_edge_cases.py`):
+  - Coverage:
+    - T at every dispatch boundary (1, 2, 3, 4, 5, 7, 8, 9, 15, 17, 31, 63, 65, 127, 129, 257);
+    - d or f not a multiple of 128, plus k=1, k=E and E=1;
+    - zero or unnormalized combine weights (an all-zero row must give exactly zero);
+    - every token on the same experts;
+    - slot-order invariance;
+    - batch consistency (token t inside T=16 matches T=1);
+    - 100× activations.
+  - Each case runs twice: with the shipped dispatch, and with the fallback disabled. In the second mode the test fails if the fallback runs, so the custom kernels are exercised at every T. (Audit: in the first version many cases silently reached the fallback.)
+  - Mutation check: swapping one expert of one token raises the error 6–15× over the clean run, 2–5× over the tolerance.
+- **Wide random sweep** (`moelab/sweep.py`): 60 random shapes per run (d 512–5120, f 256–4096, E 8–256, k 1–8, T 1–128, bf16/fp16, uniform/zipf/one-hot routing), with correctness checks and a single-process A/B screen.
+- **Targeted grid** (`moelab/grid.py`): real-model and small shapes × T chosen by load = T·k/E (average tokens per expert), with the **custom kernels forced** so the grid measures what it is meant to measure.
 
-### Findings
-1. **Correct everywhere.** 300 random cases (5 sweeps) and 100 edge cases: all within tolerance vs the fp32 reference.
-2. **Slower than mlx-lm at high load.** On the original dispatcher, 17/60 random int4 cases and 16/60 MXFP4 cases were below 1.0×. The grid shows why: the deciding quantity is **load = T·k/E**, not T.
-   - Real-model shapes win clearly up to load 8 (1.2–2.1×), are roughly at parity at load 12–32 (0.88–1.23×), and lose at load 32 on some shapes.
-   - int4 on gpt-oss-like shapes (d=2880, scalar tile path) loses from load 6 (0.93×) down to 0.44×.
-   - Experts with d·f < 1M lose earlier.
-   - The earlier "wins up to T=256" held only because Qwen3 has E=128 and k=8, so load at T=256 is only 16.
-3. **Fix:** above a load threshold the dispatchers now call `moelab/fallback.py:gather_moe`, a copy of mlx-lm's own SwitchGLU path (sorted `gather_qmm`) on our state layout. Above the threshold the result therefore *is* the baseline.
-   - int4: custom kernels up to load 8 when d and f are multiples of 128 and d·f ≥ 2^20, otherwise up to load 4.
-   - MXFP4: custom up to load 8.
-   - gpt-oss e2e patch: stock above load 8.
-   - Re-run, same seeds: the int4 minimum went from 0.494× to 0.682×, MXFP4 from 0.854× to 0.946×. Most remaining flags are 0.98–1.00× (fallback ≈ baseline, within noise).
-   - Held-out seed 21: the screen flagged 14 cases. Every one below 0.95× was re-measured with compare (8 windows, 3 launches); medians are 1.05–1.08×, except fallback cases at 0.999×. One CI touches parity: d512 f4096 E16 k2, T=1, 1.053× [0.992, 1.085] (`runs/t1_*.json`, `runs/recheck_*.json`). The screen's single-process timing produces false flags (0.51×, 0.78×, 0.88× all became 1.04–1.22×).
-4. **Fresh crossover** (`runs/crossover_r7_*.json`, seeds 9000):
+### Finding 1: correct everywhere
+- 480 random cases (8 sweeps, 3 of them on the final code) and every edge case pass against the fp32 reference.
+- Total suite after round 7: 648 passed + 3 xfailed with `MOE_SLOW=1`. This includes real-model multi-token logits, run with both router modes.
 
-| shape | T=16 | 32 | 64 | 128 | 256 | 512 |
-|---|---|---|---|---|---|---|
-| Qwen3-30B-A3B | | | 1.87 | 1.34 | 1.01 (fallback) | 1.02 (fallback) |
-| gpt-oss-20b, int4 | 1.42 | 1.32 | 1.00 (fallback) | 0.98 [0.98, 1.02] (fallback) | | |
+### Finding 2: what decides the winner at T>1 is load = T·k/E, not T
+On the original dispatcher, 17/60 random int4 cases and 16/60 MXFP4 cases were below 1.0× in the screen. The grids explain why (`runs/grid_q4.json`, `grid_mxfp4.json`, `grid_small_*.json`, custom kernels forced, all guard ok):
 
-   - Before the fix, the gpt-oss int4 numbers at T=64 and 128 were 0.71× and 0.51×.
-   - Cost: Qwen3 gives up the 4–9% the custom kernel had at T=192–384.
-   - Headline numbers are unchanged: every headline cell runs at load ≤ 4, where dispatch is identical.
-5. **Remaining limitation: saturated skew.** If all k experts of a step receive every token (synthetic one-hot, d2560 f256 E64 k8, T=32), the policy sees load 4 but the true load is 32, and the custom kernel runs at 0.73×.
-   - Real traces never get close. The busiest expert in a T=32 window gets 26 (Qwen3), 22 (gpt-oss) or 13 (DeepSeek) tokens at the median, but the mean per active expert is 5.3, 6.6 and 3.7.
-   - The real-trace layer speedups at T=32 (2.45×) already include that skew.
-6. **Observation: one hot expert per layer, per document.** In each layer, one expert is picked by a median 68% (Qwen3), 54% (gpt-oss) and 31% (DeepSeek) of a document's tokens; uniform routing would give 6–12%.
-   - The hot expert differs by domain: in 98% (Qwen3) and 92% (gpt-oss) of layers, the three documents have different hot experts.
-   - This is the main source of the T>1 weight reuse.
-   - Caveat: 3 documents, ~5k tokens. Related "super expert" work exists in the literature, so this is not claimed as new.
-7. **Long context: where decode time goes** (`moelab/breakdown.py`, Qwen3, real KV cache; "no-moe" = MoE block returns zeros):
+| shape class | custom kernel wins up to | then |
+|---|---|---|
+| int4, d and f multiples of 128, d·f ≥ 1.5M (Qwen3-30B, DeepSeek-V2-Lite, OLMoE, Qwen3-235B) | load 24: 13 of 14 cells > 1 at load 12–24 (the exception: 0.957) | load 32: 0.92–1.06 |
+| int4, smaller experts (d·f 0.13–1.05M) | load 8 (all 6 shapes) | load 12–16: 0.90–1.03, load 24: 0.82–0.97, load 32: 0.78–0.94 |
+| int4, d=2880 (scalar tile path) | load 4 | load 6: 0.93, load 8–32: 0.71 → 0.44 |
+| MXFP4, d·f ≥ 1.5M | load 24: 15 of 18 cells > 1 (the rest 0.95, 0.97, 1.00) | load 32: 0.88–1.11 |
+| MXFP4, smaller experts | load 8 | load 16: 0.96–1.18 |
+
+- **Policy** (`metal_q4_moe.custom_wins`, `metal_mxfp4_moe.load_max`, gpt-oss patch in `e2e.py`): above the per-class threshold, the dispatchers call `moelab/fallback.py:gather_moe`. It is a copy of mlx-lm's own SwitchGLU path, and `tests/test_fallback.py` checks it is bit-identical to the real module. Above the threshold the result therefore *is* the baseline.
+- A first version used load 8 everywhere; the audit showed it threw away measured wins (up to 1.23× on Qwen3-235B). The thresholds were refitted.
+- **Rigorous check at the boundaries** (`runs/r7_policy/*.json`, seeds 9100+, all guard ok):
+
+| case | load | result |
+|---|---|---|
+| Qwen3-30B int4, T=192/256/384 | 12/16/24 | 1.070 / 1.089 / 1.054 |
+| Qwen3-30B int4, T=512 | 32 → fallback | 1.000 |
+| Qwen3-235B int4, T=256/384 | 16/24 | 1.124 / 1.100 |
+| gpt-oss int4, T=32 / 48 | 4 / 6 → fallback | 1.345 / 1.000 |
+| gpt-oss MXFP4, T=96/128/192 | 12/16/24 | 1.078 / 1.132 / 1.064 |
+| small MXFP4 (d768 f512 E64 k8), T=64/96/128 | 8 / 12, 16 → fallback | 1.232 / 1.001 / 0.996 (with threshold 16: 0.989 at T=128, so lowered to 8) |
+| small int4 (d1024 f512 E32 k4), T=64/96 | 8 / 12 → fallback | 1.224 / 1.001 |
+
+- **Before vs after on the gpt-oss int4 shape** (`runs/crossover_r7_q4_gptoss.json`, guard ok): T=64 went 0.71 → 1.00, T=128 0.51 → 0.98 [0.98, 1.02].
+- **Headline numbers are unaffected:** every headline cell runs at load ≤ 4, where all policy versions dispatch the same kernel.
+
+### Finding 3: final sweeps and the remaining losses
+On the final code (`runs/sweep_*_final*.json`):
+
+| run | guard | correct | median | min | below 1.0 |
+|---|---|---|---|---|---|
+| q4, seed 11 | **CONTENDED (87%)** | 60/60 | 1.239 | 0.762 | 18 |
+| mxfp4, seed 12 | ok | 60/60 | 1.257 | 0.943 | 15 |
+| q4, held-out seed 31 | ok | 60/60 | 1.307 | 0.550 | 9 |
+
+- **Every screen value below 0.95 was re-measured with compare:**
+  - **False alarms of the screen:** 0.550 (d2048 f512 E8 k2, T=1) became **1.313** [1.29, 1.33]. Earlier, 0.51 / 0.78 / 0.88 became 1.04–1.22 (`runs/t1_*.json`, `runs/recheck_*.json`; 3 of those 11 rechecks ran CONTENDED: `t1_d2048f2048E32k8` at 73%, plus two at 91–92%).
+  - **Real, small losses on tiny experts:**
+    - d512 f1536 E32 k1, T=3: **0.929** [0.92, 0.95];
+    - d768 f256 E64 k4, T=128: **0.953** [0.95, 0.96].
+    - These experts have d·f of 0.2–0.8M, 2–8× smaller than the smallest model studied (Qwen3, 1.57M). The thresholds were not tuned to individual points.
+  - **Real, large loss: saturated skew.** When all k experts of a step get every token (synthetic one-hot: d2560 f256 E64 k8, T=32), the policy sees load 4 while the true load is 32, and the custom kernel runs at **0.758** [0.757, 0.765] (`runs/r7_policy/q4_onehot.json`). The other one-hot screens give 0.76–0.85 (int4) and 0.94–0.96 (MXFP4).
+  - **Fallback cases:** most remaining flags are 0.98–1.00. The fallback equals the baseline, so this is noise: a recheck of 0.970 became 1.030 [0.98, 1.06].
+- **Do real routers saturate like that?** In real traces the busiest expert in a T=32 window gets a median of 26 (Qwen3), 22 (gpt-oss) or 13 (DeepSeek) tokens, but the mean per active expert is only 5.3, 6.6 and 3.7. The real-trace layer speedups at T=32 (2.45×) already include this skew. Saturating all k experts at once was not seen.
+- **Observation: one hot expert per layer, per document.** In each layer, one expert is chosen by a median 68% (Qwen3), 54% (gpt-oss) and 31% (DeepSeek) of a document's tokens; uniform routing would give 6–12%.
+  - The hot expert depends on the document: in 98% (Qwen3) and 92% (gpt-oss) of layers, the three documents have different hot experts.
+  - This is the main source of weight reuse at T>1.
+  - Caveat: 3 documents, ~5k tokens. "Super expert" work exists in the literature, so this is not claimed as new.
+
+### Finding 4: a fused router tail, +5–6 points end to end
+- **Cost of the router:** in Qwen3 (48 layers, T=1, `runs/router_cost.py`) it costs **1.49 ms per token**. The gate GEMV is only 0.26 ms; the rest is 4–5 tiny dispatches per layer (softmax, argpartition, take, renormalize).
+- **Kernel** (`moelab/router.py`): one simdgroup per token computes the top-k over the logits plus the weights.
+  - Weights: softmax over the top-k (Qwen3 `norm_topk_prob`, and gpt-oss, which applies softmax to the top-k values), or full-softmax probabilities (DeepSeek-V2 greedy, with `routed_scaling_factor`).
+  - Any E ≤ 1024. Ties go to the lowest id.
+  - NaN logits count as −∞. With fewer than k finite logits the remaining slots get unused ids and weight 0 (audit: the first version wrote out of bounds there).
+  - DeepSeek-V3 gates (sigmoid + correction bias) stay stock.
+  - Opt-in: `e2e.py --fused-router`; on by default in `moelab/generate.py`.
+- **Semantics change, measured** (`runs/router_ties.json`):
+  - Stock Qwen3 routing rounds the softmax to bf16 *before* argpartition.
+  - On 512 real tokens × 48 layers, stock and exact top-8 pick different experts in **9.00%** of token-layers, and **every one** of those is an exact tie of the bf16 probabilities, where stock's pick is arbitrary.
+  - The fused kernel picks the larger logit. This is why greedy outputs diverge from stock at token 2 instead of token 22.
+- **End to end** (`runs/r7/*.json`, same session, 512 tokens × 3 rounds, all guard ok; stock is unmodified mlx-lm in every row):
+
+| model | our kernels | kernels + fused router | verify 4 / 16 / 32, kernels + router |
+|---|---|---|---|
+| Qwen3-30B-A3B | +11.4% | **+17.3%** | 1.26 / 1.47 / 1.79 (kernels only: 1.23 / 1.48 / 1.83) |
+| gpt-oss-20b | +7.7% | **+9.3%** | 1.30 / 1.71 / 1.54 |
+| DeepSeek-V2-Lite | +7.7% | **+12.1%** (output still identical, 225/225) | 1.18 / 1.33 / 1.63 |
+
+  - The router helps at T=1. At verify steps its cost is spread over the chunk and the difference is within run-to-run drift (both arms moved ~4% between runs).
+  - Today's stock Qwen3 ran at 84 tok/s vs 91.6 at night, with the guard ok. The kernels-only gain is therefore higher today (+11.4%) than the night's +8.6–9.0%; the cause is not known. Only same-session ratios are compared here; the README headline keeps the night numbers.
+- **Quality** (`runs/r7/*_quality_fused.json`, teacher-forced, frozen corpus):
+  - The fp32 truth uses the **stock** router. The audit found the first version circular, because its truth also used the fused router.
+  - A second truth with exact routing is reported as `fp32_exact`.
+
+| model | PPL stock / ours (kernels + router) / fp32 (stock routing) / fp32_exact | top-1 vs fp32: stock / ours | mean abs ΔNLL vs fp32: stock / ours |
+|---|---|---|---|
+| Qwen3 | 30.80 / 30.73 / 30.90 / 30.63 | 97.00% / 96.35% | 0.074 / 0.087 |
+| gpt-oss | 181.2 / 177.3 / 172.4 / 169.2 | 90.47% / 91.46% | 0.143 / 0.129 |
+| DeepSeek | 41.35 / 41.39 / 41.26 / 41.32 | 97.70% / 97.70% | 0.031 / 0.032 |
+
+  - Honest reading for Qwen3: the fused router changes the tie decisions. Against the stock-routed truth it is slightly further away (0.087 vs 0.074); against the exact-routed truth it is closer (0.075 vs 0.086). Perplexities are within 0.9% of each other, so this is a different, not a better, model.
+  - On gpt-oss, ours is closer to the truth than stock. On DeepSeek they are equal.
+
+### Finding 5: long context
+Decode time breakdown (`moelab/breakdown.py`, Qwen3, real KV cache; "no-moe" = MoE block returns zeros; guard ok):
 
 | context | stock ms/token | ours | no-moe | MoE stock → ours | MoE share (stock) | e2e |
 |---|---|---|---|---|---|---|
@@ -608,11 +675,26 @@ Goal: find wrong or slower results outside the shapes the kernels were tuned on.
 | 8k | 20.21 | 19.47 | 12.06 | 8.15 → 7.41 (1.10×) | 40% | 1.038× |
 | 16k | 24.39 | 24.11 | 16.61 | 7.79 → 7.50 (1.04×) | 32% | 1.012× |
 
-   - Most of the e2e shrink is Amdahl: attention grows from 5.6 to 16.6 ms.
-   - But the MoE-only gain also falls (1.18× → 1.04×), although MoE work does not depend on context.
-   - **Tested and rejected hypothesis:** memory interference from streaming the KV cache. A layer-level chain with 4–34 MB of reads per layer between MoE calls keeps the gain at 1.25–1.28× (`runs/kv_interleave.py`).
-   - Open: the cause is unknown. Candidates are CPU-encode/GPU overlap and attribution error of the "no-moe" subtraction. Spread across rounds is 0.1–0.3 ms.
-8. **Full-model tests on the new dispatcher:** `MOE_SLOW=1` gives 454 passed, 3 xfailed.
+- Attention grows from 5.6 to 16.6 ms (Amdahl).
+- The MoE-only gain also falls from 1k on (1.18 → 1.04; the 128 point, 1.11, does not fit a monotone trend), although MoE work does not depend on context.
+- **Tested and rejected:** layer-level chains with 4–34 MB of streaming reads per layer (`runs/kv_interleave.py`), or with real SDPA over a 1k–16k KV cache (`runs/sdpa_interleave.py`), between MoE calls keep the gain at 1.25–1.38×. So it is not simple memory interference.
+- **Partial clue:** with SDPA in the chain, our MoE time rises ~0.7 ms at 16k (4.83 → 5.57), stock's ~0.4 ms.
+- **Open:** CPU-encode/GPU overlap in the real model, or attribution error of the "no-moe" subtraction. Round-to-round spread is 0.1–0.3 ms.
+
+### Audit of round 7 (fresh agent, read-only) and what was done
+| # | finding | fix |
+|---|---|---|
+| 1 | Fused DeepSeek path also caught `deepseek_v3` (no `topk_method`, different gate) | restricted to `deepseek_v2` |
+| 2 | Router kernel wrote out of bounds when fewer than k finite logits | NaN → −∞, unused ids with weight 0; tests with NaN/−∞ rows |
+| 3 | Load-8 policy discarded measured wins; small-expert rule rested on contended screens | clean grids incl. small shapes, refitted thresholds, boundary rechecks |
+| 4 | Contended runs not disclosed | flagged in the tables above |
+| 5 | "medians 1.05–1.08×" misquoted | replaced by the measured values |
+| 6 | 0.73× one-hot number had no file | re-measured: `runs/r7_policy/q4_onehot.json`, 0.758 |
+| 7 | Router quality comparison circular; no file for the 9% tie claim | stock-router truth + `fp32_exact`; `runs/router_ties.json` |
+| 8 | Edge tests reached the fallback, not the custom kernels | forced-custom mode that fails if the fallback runs |
+| 9 | Weak fallback, DeepSeek and router tests | bit-identity vs SwitchGLU; routed_scaling_factor 2.5 and a call assertion; bf16-path tie test; E up to 1000, k=32 |
+| 10 | Guard's running maximum drifts | p90 of recent history per (chip, power) |
+| 11 | Stale comment in `e2e.py`, non-monotone long-context wording | fixed |
 
 ## Open problems / next steps
 1. ~~Small-batch + skewed routing~~ → solved by `metal_q4_tiles_mma` (round 1). Remaining: gpt-oss (d % 128 ≠ 0) tail path, T=2 with uniform routing (round 3 running).

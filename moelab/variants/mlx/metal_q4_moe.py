@@ -6,8 +6,12 @@ T > 1, otherwise (gpt-oss)  -> metal_q4_tiles_b   (expert tiles, scalar)
 All three share the mx.quantize state layout, so prepare() is done once.
 
 Round 7 (2026-11-07): above a load threshold (load = T*k/E, avg tokens per expert) MLX's sorted
-gather_qmm is as fast or faster (runs/grid_q4.json, runs/sweep_q4.json), so run() falls back to it:
-  aligned d, f and d*f >= 2^20: custom up to load 8; otherwise (gpt-oss-like or tiny experts): up to load 4.
+gather_qmm is as fast or faster, so run() falls back to it. Thresholds fitted on clean grids with the
+custom kernels forced (runs/grid_q4.json, runs/grid_small_q4.json); first version (load 8 everywhere)
+was too conservative (audit):
+  d, f multiples of 128 and d*f >= 1.5 * 2^20 (Qwen3-30B and larger): custom up to load 24
+  d, f multiples of 128, smaller experts: up to load 8
+  otherwise (scalar tile path, e.g. d=2880): up to load 4
 """
 import os
 
@@ -37,8 +41,8 @@ def dequant(s):
 
 def custom_wins(T, k, E, D, F):
     load = T * k / E
-    if D % 128 == 0 and F % 128 == 0 and D * F >= 1 << 20:
-        return load <= 8
+    if D % 128 == 0 and F % 128 == 0:
+        return load <= (24 if D * F >= 3 << 19 else 8)
     return load <= 4
 
 

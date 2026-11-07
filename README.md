@@ -38,8 +38,14 @@ Every cell was reproduced on the final code in one clean run of `scripts/reprodu
 
 The table values come from the reproduction run on the final kernels (`runs/repro/*_qwen3_trace.json`, seeds 5000+).
 
-- **Crossover (RQ1), revised in round 7:** what decides the winner is load = T·k/E (average tokens per expert), not T. Our kernels win clearly up to load 8: Qwen3 1.87× at T=64 and 1.34× at T=128. Above that they are at parity or slower (int4 on gpt-oss-like d=2880 down to 0.44×), so the dispatchers now fall back to mlx-lm's own sorted `gather_qmm` path. After the fix, the worst case is parity (`runs/crossover_r7_*`, `runs/grid_*`, `runs/sweep_*`). Whole-model 32-token chunks (short prefill or batch): **1.83×** (`runs/crossover_r6_*`, `runs/e2e_prefill_chunks_qwen3_r6.json`).
-- **Tested wide and narrow (round 7):** 300 random shapes and 100 edge cases are all correct. A GPU-contention guard flags runs where another process steals bandwidth. Details and the one remaining limitation (all k experts saturated, never seen in real traces) are in `docs/RESULTS.md`, "Round 7".
+- **Crossover (RQ1), revised in round 7:** what decides the winner at T>1 is load = T·k/E (average tokens per expert), not T. The custom kernels win up to load 24 on Qwen3-30B-sized and larger experts (Qwen3 1.07–1.09× at T=192–384, Qwen3-235B 1.10–1.12×), up to load 8 on small experts, and up to load 4 on int4 d=2880. Above that, the dispatchers fall back to mlx-lm's own sorted `gather_qmm` path, which is bit-identical to the baseline (gpt-oss int4 at T=128 went 0.51× → 0.98–1.00×). Whole-model 32-token chunks: **1.83×**. Files: `runs/r7_policy/`, `runs/grid_*`, `runs/sweep_*_final*`.
+- **Fused router tail (round 7):** one Metal kernel replaces mlx-lm's softmax → argpartition → take → renormalize. With it, plain decode goes from +11.4% to **+17.3%** on Qwen3, +7.7% to **+9.3%** on gpt-oss and +7.7% to **+12.1%** on DeepSeek (same-session runs, `runs/r7/`).
+  - Caveat: stock Qwen3 routing rounds probabilities to bf16 before top-k, and 9% of its expert picks are exact ties decided arbitrarily. The fused kernel picks the larger logit, so outputs differ from stock from token 2. Perplexity stays within 0.9%: a different model, not a better one (`runs/router_ties.json`, `runs/r7/*_quality_fused.json`).
+- **Tested wide and narrow (round 7):** 480 random shapes and all edge cases are correct. Every screen flag was re-measured with `compare`. Remaining losses:
+  - saturated skew (all k experts get every token, 0.76×), never seen in real traces;
+  - two tiny-expert shapes (0.93×, 0.95×), smaller than any studied model.
+  
+  A GPU-contention guard flags runs disturbed by other processes. Details: `docs/RESULTS.md`, "Round 7".
 - **Clean held-out shape (Qwen3-235B, uniform routing):** int4 1.06–1.26×, MXFP4 1.07–1.23×. Partially seen shapes: Mixtral up to 1.82× and DeepSeek-V2-Lite up to 1.42× (MXFP4).
 - **T=1 is at the memory wall.** With non-repeating routing our GEMV reads at 93% (Qwen3), 100% (gpt-oss) and ~103% (Mixtral) of 250 GB/s. mlx-lm reaches 77% on Qwen3.
 - **Mechanism at T=1:**

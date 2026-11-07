@@ -1,0 +1,44 @@
+{
+ "args": {
+  "model": "mlx-community/gpt-oss-20b-MXFP4-Q8",
+  "variant": "moelab/variants/mlx/metal_mxfp4_gptoss.py",
+  "tokens": 256,
+  "rounds": 3,
+  "quality": true,
+  "draft": null,
+  "num_draft": 3,
+  "max_t": 256,
+  "out": "runs/r7/G_quality_fused.json",
+  "fused_router": true,
+  "context": 0,
+  "verify_chunks": null
+ },
+ "ppl": {
+  "stock": 181.16750452582102,
+  "variant": 177.32620380958264,
+  "fp32": 172.39119823925952,
+  "fp32_exact": 169.20990719833293
+ },
+ "pairs": {
+  "stock_vs_fp32": {
+   "top1_agreement": 0.9046673286991063,
+   "mean_abs_dnll": 0.1431250718996565
+  },
+  "variant_vs_fp32": {
+   "top1_agreement": 0.9145978152929494,
+   "mean_abs_dnll": 0.1284911488113479
+  },
+  "stock_vs_variant": {
+   "top1_agreement": 0.9185700099304865,
+   "mean_abs_dnll": 0.1241387932634401
+  },
+  "stock_vs_fp32_exact": {
+   "top1_agreement": 0.9126117179741807,
+   "mean_abs_dnll": 0.15791663536367256
+  },
+  "variant_vs_fp32_exact": {
+   "top1_agreement": 0.9225422045680238,
+   "mean_abs_dnll": 0.1326003022558521
+  }
+ }
+}

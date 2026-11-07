@@ -1,0 +1,44 @@
+{
+ "args": {
+  "model": "mlx-community/DeepSeek-V2-Lite-Chat-4bit-mlx",
+  "variant": "moelab/variants/mlx/metal_q4_moe.py",
+  "tokens": 256,
+  "rounds": 3,
+  "quality": true,
+  "draft": null,
+  "num_draft": 3,
+  "max_t": 256,
+  "out": "runs/r7/D_quality_fused.json",
+  "fused_router": true,
+  "context": 0,
+  "verify_chunks": null
+ },
+ "ppl": {
+  "stock": 41.35466569920253,
+  "variant": 41.39407228269233,
+  "fp32": 41.26097976558544,
+  "fp32_exact": 41.315255718644686
+ },
+ "pairs": {
+  "stock_vs_fp32": {
+   "top1_agreement": 0.9770017035775128,
+   "mean_abs_dnll": 0.031114486453886536
+  },
+  "variant_vs_fp32": {
+   "top1_agreement": 0.9770017035775128,
+   "mean_abs_dnll": 0.03213962948098906
+  },
+  "stock_vs_variant": {
+   "top1_agreement": 0.9863713798977853,
+   "mean_abs_dnll": 0.024312794310067744
+  },
+  "stock_vs_fp32_exact": {
+   "top1_agreement": 0.9804088586030665,
+   "mean_abs_dnll": 0.035349091232533755
+  },
+  "variant_vs_fp32_exact": {
+   "top1_agreement": 0.9829642248722317,
+   "mean_abs_dnll": 0.0368121949736873
+  }
+ }
+}

@@ -1,0 +1,44 @@
+== Q quality
+Fetching 12 files:   0%|          | 0/12 [00:00<?, ?it/s]Fetching 12 files: 100%|██████████| 12/12 [00:00<00:00, 3067.51it/s]
+stock      PPL 30.8032
+variant    PPL 30.7314
+fp32       PPL 30.9017
+fp32_exact PPL 30.6288
+stock   vs fp32   : top-1 agreement  97.00%  mean |dNLL| 0.0742
+variant vs fp32   : top-1 agreement  96.35%  mean |dNLL| 0.0874
+stock   vs variant: top-1 agreement  96.07%  mean |dNLL| 0.0852
+stock   vs fp32_exact: top-1 agreement  95.22%  mean |dNLL| 0.0861
+variant vs fp32_exact: top-1 agreement  96.07%  mean |dNLL| 0.0747
+== G quality
+Fetching 10 files:   0%|          | 0/10 [00:00<?, ?it/s]Fetching 10 files: 100%|██████████| 10/10 [00:00<00:00, 2924.90it/s]
+stock      PPL 181.1675
+variant    PPL 177.3262
+fp32       PPL 172.3912
+fp32_exact PPL 169.2099
+stock   vs fp32   : top-1 agreement  90.47%  mean |dNLL| 0.1431
+variant vs fp32   : top-1 agreement  91.46%  mean |dNLL| 0.1285
+stock   vs variant: top-1 agreement  91.86%  mean |dNLL| 0.1241
+stock   vs fp32_exact: top-1 agreement  91.26%  mean |dNLL| 0.1579
+variant vs fp32_exact: top-1 agreement  92.25%  mean |dNLL| 0.1326
+== D quality
+Fetching 10 files:   0%|          | 0/10 [00:00<?, ?it/s]Fetching 10 files: 100%|██████████| 10/10 [00:00<00:00, 2515.02it/s]
+stock      PPL 41.3547
+variant    PPL 41.3941
+fp32       PPL 41.2610
+fp32_exact PPL 41.3153
+stock   vs fp32   : top-1 agreement  97.70%  mean |dNLL| 0.0311
+variant vs fp32   : top-1 agreement  97.70%  mean |dNLL| 0.0321
+stock   vs variant: top-1 agreement  98.64%  mean |dNLL| 0.0243
+stock   vs fp32_exact: top-1 agreement  98.04%  mean |dNLL| 0.0353
+variant vs fp32_exact: top-1 agreement  98.30%  mean |dNLL| 0.0368
+== router ties
+Fetching 12 files:   0%|          | 0/12 [00:00<?, ?it/s]Fetching 12 files: 100%|██████████| 12/12 [00:00<00:00, 2864.64it/s]
+24576 token-layers: stock and exact top-8 differ in 2213 (9.00%); of those, bf16-prob ties: 2213 (100%)
+== sweeps
+q4: 60 cases, all correct: True, speedup median 1.239x min 0.762x, below 1.0: 18
+guard: probe min 211 GB/s vs p90 243 for Apple M4 Pro|ac (87%) -> CONTENDED - absolute numbers unreliable, close other GPU users and re-run
+mxfp4: 60 cases, all correct: True, speedup median 1.257x min 0.943x, below 1.0: 15
+guard: probe min 244 GB/s vs p90 244 for Apple M4 Pro|ac (100%) -> ok
+q4: 60 cases, all correct: True, speedup median 1.307x min 0.550x, below 1.0: 9
+guard: probe min 236 GB/s vs p90 245 for Apple M4 Pro|ac (96%) -> ok
+done
