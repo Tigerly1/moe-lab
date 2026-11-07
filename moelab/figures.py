@@ -110,6 +110,20 @@ def ablation():
     save(fig, "ablation_alignment")
 
 
+def mxfp4():
+    fig, ax = plt.subplots(figsize=(5.6, 3.2))
+    for f, lab, col in [("cmp_mxfp4_r5_qwen3_trace.json", "Qwen3-30B-A3B, ślady", ACC),
+                        ("cmp_mxfp4_r5_gpt-oss-20b.json", "gpt-oss-20b, jednostajny", WARM)]:
+        s = R(f)["summary"]
+        T = [x["T"] for x in s]; y = [x["speedup_B_over_A"] for x in s]
+        ax.plot(T, y, "-o", ms=3, color=col, label=lab)
+        ax.fill_between(T, [x["ci95"][0] for x in s], [x["ci95"][1] for x in s], color=col, alpha=0.15, lw=0)
+    ax.axhline(1, color=MUTED, lw=0.8)
+    ax.set_xscale("log", base=2); ax.set_xticks([1, 2, 4, 8, 16, 32], ["1", "2", "4", "8", "16", "32"])
+    ax.set_xlabel("tokeny w kroku T"); ax.set_ylabel("przyspieszenie vs mlx-lm MXFP4 (×)"); ax.legend(fontsize=8)
+    save(fig, "mxfp4_speedup")
+
+
 if __name__ == "__main__":
-    for f in (speedup_vs_T, unique_experts, per_layer, sustained, verify_bench, ablation):
+    for f in (speedup_vs_T, unique_experts, per_layer, sustained, verify_bench, ablation, mxfp4):
         f()
