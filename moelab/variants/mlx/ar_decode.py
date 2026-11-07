@@ -1,4 +1,10 @@
-"""Custom Metal: fused int4 MoE GEMV v3.1. EDIT ME.
+"""Custom Metal: fused int4 MoE GEMV, autoresearch round 2 (from v3.1). EDIT ME.
+
+ar round 2 vs v3.1: 2 dispatches. The down kernel runs threadgroups of (32, K): simdgroup j
+computes slot t*K+j and the K partials are reduced in threadgroup memory straight into
+y[t] (no fp32 partials, no combine kernel). Down rows are split over LPR lanes per row
+(power of 2 giving ~ITERS uint4 chunks per lane) so all 32 lanes work when F/32 < 32.
+---- v3.1 notes:
 
 v3.1 vs v3: fewer dispatches (5 -> 3). idx passed as int32 (no astype op);
 sum over k + cast fused into one tiny combine kernel. On M4 Pro each dispatch
@@ -20,12 +26,11 @@ Knobs: R (rows per simdgroup), SG_PER_TG.
 """
 import mlx.core as mx
 
-META = {"name": "ar_decode", "description": "v3 + 3 dispatches (combine kernel, int32 idx)"}
+META = {"name": "ar_decode", "description": "v3.1 + k-reduction in down threadgroup (2 dispatches) + LPR lanes per down row"}
 BITS, GS = 4, 64
 W_BITS = BITS + 32 / GS
 R_UP, R_DOWN = 1, 2  # tuned on M4 Pro, T=1 (scan: R_UP=1 best on all shapes)
 SG_PER_TG = 4
-ITERS = 3  # target uint4 chunks per lane in the down kernel
 ITERS = 3  # target uint4 chunks per lane in the down kernel
 
 HEADER = """
@@ -140,14 +145,6 @@ def _lpr(chunks):
     return l
 
 
-def _lpr(chunks):
-    """lanes per row: smallest power of 2 >= chunks / ITERS, capped at 32."""
-    l = 1
-    while l < 32 and l * ITERS < chunks:
-        l *= 2
-    return l
-
-
 def prepare(w_gate, w_up, w_down):
     E, f, d = w_gate.shape
     assert d % 32 == 0 and f % 32 == 0 and f % R_UP == 0, "shape constraints"
@@ -166,8 +163,6 @@ def run(s, x, idx, wts):
     h = _k1(inputs=[x, gq, gs, gb, uq, us, ub, idx], template=base + [("R", R_UP)],
             grid=(32 * F // R_UP, T * k, 1), threadgroup=(32 * SG_PER_TG, 1, 1),
             output_shapes=[(T * k, F)], output_dtypes=[x.dtype])[0]
-    lpr = _lpr(F // 32)
-    rows_per_sg = R_DOWN * 32 // lpr
     lpr = _lpr(F // 32)
     rb = R_DOWN * 32 // lpr
     return _k2(inputs=[h, dq, ds, db, idx, wts.flatten()], template=base + [("R", R_DOWN), ("LPR", lpr)],
