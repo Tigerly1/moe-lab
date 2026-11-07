@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Reproduce every headline number in README.md from scratch (Apple M4 Pro, AC power, ~45 min).
-# Needs the two models cached: mlx-community/Qwen3-30B-A3B-4bit, mlx-community/gpt-oss-20b-MXFP4-Q8.
+# Reproduce every headline number in README.md from scratch (Apple M4 Pro, AC power, ~15 min).
+# Needs three models cached: Qwen3-30B-A3B-4bit, gpt-oss-20b-MXFP4-Q8, DeepSeek-V2-Lite-Chat-4bit-mlx (mlx-community).
 # Uses seeds 5000+ (never used by tuning agents or earlier verification runs).
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -35,4 +35,15 @@ $PY -m moelab.e2e --model mlx-community/gpt-oss-20b-MXFP4-Q8 --variant moelab/va
   --tokens 512 --rounds 3 --out "$OUT/e2e_gptoss_plain.json" | grep -E "^(stock|variant|speedup)" | tee "$OUT/e2e_gptoss_plain.txt"
 $PY -m moelab.e2e --model mlx-community/gpt-oss-20b-MXFP4-Q8 --variant moelab/variants/mlx/metal_mxfp4_gptoss.py \
   --verify-chunks 4 16 --out "$OUT/e2e_gptoss_verify.json" | grep "^verify" | tee "$OUT/e2e_gptoss_verify.txt"
+$PY -m moelab.e2e --model mlx-community/gpt-oss-20b-MXFP4-Q8 --variant moelab/variants/mlx/metal_mxfp4_gptoss.py \
+  --verify-chunks 32 --out "$OUT/e2e_gptoss_chunk32.json" | grep "^verify" | tee "$OUT/e2e_gptoss_chunk32.txt"
+$PY -m moelab.e2e --model mlx-community/DeepSeek-V2-Lite-Chat-4bit-mlx --variant moelab/variants/mlx/metal_q4_moe.py \
+  --tokens 512 --rounds 3 --out "$OUT/e2e_dsv2_plain.json" | grep -E "^(stock|variant|speedup)" | tee "$OUT/e2e_dsv2_plain.txt"
+$PY -m moelab.e2e --model mlx-community/DeepSeek-V2-Lite-Chat-4bit-mlx --variant moelab/variants/mlx/metal_q4_moe.py \
+  --verify-chunks 4 16 32 --out "$OUT/e2e_dsv2_verify.json" | grep "^verify" | tee "$OUT/e2e_dsv2_verify.txt"
+
+echo "== 5. crossover (layer, uniform routing)"
+$PY -m moelab.compare moelab/variants/mlx/mlxlm_switchglu_q4.py moelab/variants/mlx/metal_q4_moe.py \
+  --shape qwen3-30b-a3b --routing uniform --tokens 64 256 512 --launches 3 --rounds 3 --windows 4 --seed-base 5000 \
+  --out "$OUT/crossover_uniform.json" | tee "$OUT/crossover_uniform.txt"
 echo "done: $OUT"
