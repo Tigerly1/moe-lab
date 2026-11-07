@@ -3,6 +3,28 @@
 Verified results only: re-measured (≥2 process launches or `moelab.compare`), guard ok. Newest first.
 Hardware: Apple M4 Pro, 48 GB, unless stated. Details and caveats: `docs/RESULTS.md`.
 
+## 2026-11-07 — upstream: PRs to ml-explore/mlx-lm
+
+- **PR 1 opened:** [ml-explore/mlx-lm#2043](https://github.com/ml-explore/mlx-lm/pull/2043), "server: reject empty prompts instead of ending the generation thread".
+  - The bug: one empty prompt kills the batched server for every client.
+  - The new test fails on main and passes with the fix; all 44 server tests pass.
+- **PR 2 ready, not opened:** "SwitchGLU: grouped-expert Metal kernels for small batches of 4-bit experts".
+  - Branch `Tigerly1/mlx-lm:moe-grouped-expert-kernels`, body in `docs/upstream/PR2_body_final.md`.
+  - The full mlx-lm suite passes (411 tests); a gradient-through-custom_function test covers LoRA training.
+  - **mlx-lm's own `mlx_lm benchmark`** (main vs branch, 2 passes), B=32:
+
+    | model | speedup |
+    |---|---|
+    | Gemma-4 | **1.71×** |
+    | Qwen3-30B | 1.56× |
+    | DeepSeek-V2-Lite | 1.55× |
+    | GLM-4.7-Flash | 1.40× |
+    | LFM2.5 | 1.38× |
+
+    B=1 is 1.03–1.08× (`runs/r9/upstream_mlx_lm_benchmark.log`).
+  - GitHub refused to create it right after PR 1 (`CreatePullRequest` permission error; REST 404). This is probably a limit for first-time contributors. Open it once #2043 is reviewed, or from the web link.
+- **Measurement pitfall caught before publishing:** the first A/B run `cd`'d into the branch checkout, so `python -m` loaded the branch in both arms (identical numbers). Fixed by running from a neutral directory and printing which code is imported.
+
 ## 2026-11-07 — round 9c: one patch for every MoE in mlx-lm; Gemma-4 / Qwen3.6 on a real server
 
 - **Universal patch** (`moelab/universal.py`): replaces `SwitchGLU` itself. Each (token, expert) slot is a row with k=1, and at T=1 the k-slot GEMV runs without its k-reduction (`run_slots`, v4 `NORED`). Routing, weighting and shared experts stay the model's own code. `moelab.generate` / `moelab.serve` select it automatically for any 4-bit g64 SwitchGLU model without a dedicated patch.
