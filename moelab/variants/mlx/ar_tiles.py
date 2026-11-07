@@ -54,6 +54,15 @@ inline float dot_q4x32(thread const float* xs, uint4 w) {
     }
     return acc;
 }
+// two tokens share one weight decode: and + cvt once, two fma
+inline void dot2_q4x32(thread const float* xa, thread const float* xb, uint4 w, thread float& da, thread float& db) {
+    float a = 0.f, b = 0.f;
+    for (uint j = 0; j < 4; ++j) {
+        uint word = w[j];
+        for (uint i = 0; i < 8; ++i) { float q = float(word & (0xFu << (4 * i))); a += xa[j * 8 + i] * q; b += xb[j * 8 + i] * q; }
+    }
+    da += a; db += b;
+}
 // A-fragment pair for MMA step s: P interleaves two words (low 16 bits: word a nibbles, high: word b).
 // (q | 0x6400) as half is exactly 1024 + q.
 inline half2 ar_dq2(uint P, uint s, half2 sc, half2 bi) {
@@ -153,7 +162,37 @@ MMA_HEAD = """
     size_t rr = (size_t)idx[tt[1]] * NR + row0 + fm;
     constexpr uint NW = NK / 8, NB = NK / 64;
 """
-GATE_UP_E_SRC = MMA_HEAD.replace("%SMALL%", """    if (n <= NSMALL) {
+GATE_UP_E_SRC = MMA_HEAD.replace("%SMALL%", """    if (n == 2 && NSMALL >= 2) {   // 2-slot tile: scalar GEMV, weights decoded once for both tokens
+        constexpr uint NWs = D / 8, NGs = D / GS;
+        uint sa = tt[1], sb = tt[2];
+        const device T* xra = x + (sa / K) * D;
+        const device T* xrb = x + (sb / K) * D;
+        float ga[RS] = {0.f}, gb_[RS] = {0.f}, ua[RS] = {0.f}, ub_[RS] = {0.f}, xs[32], xt[32];
+        for (uint c = lane; c < NWs / 4; c += 32) {
+            float xsa = load_x32(xra + c * 32, xs), xsb = load_x32(xrb + c * 32, xt);
+            uint grp = (c * 32) / GS;
+            for (uint r = 0; r < RS; ++r) {
+                size_t q = ex * F + rw0 + r;
+                float dga = 0.f, dgb = 0.f, dua = 0.f, dub = 0.f;
+                dot2_q4x32(xs, xt, ((const device uint4*)(gq + q * NWs))[c], dga, dgb);
+                dot2_q4x32(xs, xt, ((const device uint4*)(uq + q * NWs))[c], dua, dub);
+                float sg = float(gs[q * NGs + grp]), bg = float(gb[q * NGs + grp]);
+                float su = float(us[q * NGs + grp]), bu = float(ub[q * NGs + grp]);
+                ga[r] += sg * dga + bg * xsa; gb_[r] += sg * dgb + bg * xsb;
+                ua[r] += su * dua + bu * xsa; ub_[r] += su * dub + bu * xsb;
+            }
+        }
+        for (uint r = 0; r < RS; ++r) {
+            float g = simd_sum(ga[r]), u = simd_sum(ua[r]);
+            float g2 = simd_sum(gb_[r]), u2 = simd_sum(ub_[r]);
+            if (lane == 0) {
+                h[sa * F + rw0 + r] = T(g / (1.f + metal::exp(-g)) * u);
+                h[sb * F + rw0 + r] = T(g2 / (1.f + metal::exp(-g2)) * u2);
+            }
+        }
+        return;
+    }
+    if (n == 1) {
         constexpr uint NWs = D / 8, NGs = D / GS;
         for (uint t = 0; t < n; ++t) {
             uint slot = tt[1 + t];
@@ -222,24 +261,53 @@ GATE_UP_E_SRC = MMA_HEAD.replace("%SMALL%", """    if (n <= NSMALL) {
     }
 """
 
-DOWN_E_SRC = MMA_HEAD.replace("%SMALL%", """    if (n <= NSMALL) {
+DOWN_E_SRC = MMA_HEAD.replace("%SMALL%", """    if (n == 2 && NSMALL >= 2) {   // 2-slot tile: LPR GEMV, weights decoded once for both slots
+        constexpr uint NWs = F / 8, NGs = F / GS;
+        constexpr uint RR = RS * LPR / 32;
+        uint sa = tt[1], sb = tt[2];
+        uint sub = lane % LPR, rg = rw0 + (lane / LPR) * RR;
+        float aa[RR] = {0.f}, ab[RR] = {0.f}, hs[32], ht[32];
+        for (uint c = sub; c < NWs / 4; c += LPR) {
+            float hsa = load_x32(h + sa * F + c * 32, hs), hsb = load_x32(h + sb * F + c * 32, ht);
+            uint grp = (c * 32) / GS;
+            for (uint r = 0; r < RR; ++r) {
+                size_t q = ex * D + rg + r;
+                float da = 0.f, db_ = 0.f;
+                dot2_q4x32(hs, ht, ((const device uint4*)(dq + q * NWs))[c], da, db_);
+                float sc = float(ds[q * NGs + grp]), bi = float(db[q * NGs + grp]);
+                aa[r] += sc * da + bi * hsa; ab[r] += sc * db_ + bi * hsb;
+            }
+        }
+        float wa = wts[sa], wb = wts[sb];
+        for (uint r = 0; r < RR; ++r) {
+            float a = aa[r], b = ab[r];
+            for (uint o = LPR / 2; o > 0; o >>= 1) { a += simd_shuffle_xor(a, o); b += simd_shuffle_xor(b, o); }
+            if (sub == 0) { y[sa * D + rg + r] = wa * a; y[sb * D + rg + r] = wb * b; }
+        }
+        return;
+    }
+    if (n == 1) {
         constexpr uint NWs = F / 8, NGs = F / GS;
         for (uint t = 0; t < n; ++t) {
             uint slot = tt[1 + t];
-            float acc[RS] = {0.f}, hs[32];
-            for (uint c = lane; c < NWs / 4; c += 32) {
+            // LPR lanes per row (v4 trick): 32 / LPR row groups of RR rows, all lanes busy when F/32 < 32
+            constexpr uint RR = RS * LPR / 32;
+            uint sub = lane % LPR, rg = rw0 + (lane / LPR) * RR;
+            float acc[RR] = {0.f}, hs[32];
+            for (uint c = sub; c < NWs / 4; c += LPR) {
                 float hsum = load_x32(h + slot * F + c * 32, hs);
                 uint grp = (c * 32) / GS;
-                for (uint r = 0; r < RS; ++r) {
-                    size_t q = ex * D + rw0 + r;
+                for (uint r = 0; r < RR; ++r) {
+                    size_t q = ex * D + rg + r;
                     float d = dot_q4x32(hs, ((const device uint4*)(dq + q * NWs))[c]);
                     acc[r] += float(ds[q * NGs + grp]) * d + float(db[q * NGs + grp]) * hsum;
                 }
             }
             float w = wts[slot];
-            for (uint r = 0; r < RS; ++r) {
-                float a = simd_sum(acc[r]);
-                if (lane == 0) y[slot * D + rw0 + r] = w * a;
+            for (uint r = 0; r < RR; ++r) {
+                float a = acc[r];
+                for (uint o = LPR / 2; o > 0; o >>= 1) a += simd_shuffle_xor(a, o);
+                if (sub == 0) y[slot * D + rg + r] = w * a;
             }
         }
         return;
@@ -293,13 +361,14 @@ MAP_SRC = """
     t[0] = n;
 """
 _k0 = mx.fast.metal_kernel(name="ar_tiles_map", input_names=["idx"], output_names=["tl"], source=MAP_SRC)
-_k1e = mx.fast.metal_kernel(name="ar_tiles_gate_up_e", input_names=["x", "gq", "gs", "gb", "uq", "us", "ub", "idx", "tl"],
+_k1e = mx.fast.metal_kernel(name="ar_tiles_gate_up_e2", input_names=["x", "gq", "gs", "gb", "uq", "us", "ub", "idx", "tl"],
                             output_names=["h"], source=GATE_UP_E_SRC, header=HEADER)
-_k2e = mx.fast.metal_kernel(name="ar_tiles_down_e", input_names=["h", "dq", "ds", "db", "idx", "wts", "tl"],
+_k2e = mx.fast.metal_kernel(name="ar_tiles_down_e2_lpr", input_names=["h", "dq", "ds", "db", "idx", "wts", "tl"],
                             output_names=["y"], source=DOWN_E_SRC, header=HEADER)
 VT = 8
-SGK_UP, SGK_DOWN = 8, 2  # simdgroups per 8-row block: K split on the MMA path, 8 // SGK rows each on the small path
-NSMALL = 1  # tiles with <= NSMALL slots use the per-slot GEMV path
+SGK_UP = 8  # simdgroups per 8-row block: K split on the MMA path, 8 // SGK rows each on the small path
+# down: SGK chosen per shape so each small-path lane owns R_DOWN rows x ~3 chunks (v4 rule): SGK = LPR / (4 R_DOWN)
+NSMALL = 2  # tiles with <= NSMALL slots use the scalar GEMV path (n=2: one weight decode for both slots)
 
 _k3 = mx.fast.metal_kernel(name="ar_tiles_combine", input_names=["yp"], output_names=["y"], source=COMBINE_SRC)
 
@@ -337,6 +406,14 @@ def run(s, x, idx, wts):
                output_shapes=[(T, D)], output_dtypes=[x.dtype])[0]
 
 
+def _lpr(chunks, iters=3):
+    """lanes per row for the small down path: smallest power of 2 >= chunks / iters, <= 32."""
+    l = 1
+    while l < 32 and l * iters < chunks:
+        l *= 2
+    return l
+
+
 def _run_e(base, x, gq, gs, gb, uq, us, ub, dq, ds, db, idx, wts, T, k, F, D):
     tm = base + [("VT", VT), ("TK", T * k)]
     tl = _k0(inputs=[idx], template=[("VT", VT), ("TK", T * k)], grid=(T * k, 1, 1), threadgroup=(min(T * k, 256), 1, 1),
@@ -344,8 +421,11 @@ def _run_e(base, x, gq, gs, gb, uq, us, ub, dq, ds, db, idx, wts, T, k, F, D):
     h = _k1e(inputs=[x, gq, gs, gb, uq, us, ub, idx, tl], template=tm + [("NR", F), ("NK", D), ("SGK", SGK_UP), ("NSMALL", NSMALL), ("RS", 8 // SGK_UP)],
              grid=(32 * SGK_UP * F // 8, T * k, 1), threadgroup=(32 * SGK_UP, 1, 1),
              output_shapes=[(T * k, F)], output_dtypes=[x.dtype])[0]
-    yp = _k2e(inputs=[h, dq, ds, db, idx, wts.flatten(), tl], template=tm + [("NR", D), ("NK", F), ("SGK", SGK_DOWN), ("NSMALL", NSMALL), ("RS", 8 // SGK_DOWN)],
-              grid=(32 * SGK_DOWN * D // 8, T * k, 1), threadgroup=(32 * SGK_DOWN, 1, 1),
+    lpr = _lpr(F // 32)
+    sgk = max(1, lpr // (4 * R_DOWN))
+    lpr = max(lpr, 4 * sgk)  # RS = 8 / sgk rows must fill 32 / lpr row groups
+    yp = _k2e(inputs=[h, dq, ds, db, idx, wts.flatten(), tl], template=tm + [("NR", D), ("NK", F), ("SGK", sgk), ("NSMALL", NSMALL), ("RS", 8 // sgk), ("LPR", lpr)],
+              grid=(32 * sgk * D // 8, T * k, 1), threadgroup=(32 * sgk, 1, 1),
               output_shapes=[(T * k, D)], output_dtypes=[mx.float32])[0]
     return _k3(inputs=[yp], template=[("T", x.dtype), ("D", D), ("K", k), ("NT", T)],
                grid=(T * D, 1, 1), threadgroup=(256, 1, 1),
