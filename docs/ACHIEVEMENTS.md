@@ -3,6 +3,23 @@
 Verified results only: re-measured (≥2 process launches or `moelab.compare`), guard ok. Newest first.
 Hardware: Apple M4 Pro, 48 GB, unless stated. Details and caveats: `docs/RESULTS.md`.
 
+## 2026-11-08 — round 10: T=32 search (killed), expert-cache feasibility, MXFP4 for mlx-lm
+
+**T=32 tile search** (background agent, kill criterion ≥ 5%): **killed.**
+- The best change, a scalar N-slot down path for tiles of 2–3 slots, gives only +2–3%, and the gemma4 / qwen3.6 CIs include 1.0. It is not merged.
+- **Key finding:** with 3–8 slots per tile, the 8×8 MMA path sits at ~60–65% of the bytes floor for any n, so it is ALU-bound by weight decode, not memory-bound. Removing the activation loads gains only 6%, and removing the dequant only 10%.
+- Dead hypotheses: compacting the tile list (empty threadgroups are cheap), down SGK/LPR tuning, fusing the combine kernel (≤ 1%).
+- The agent's worktree branch `worktree-agent-a571ee52ffbaad921` holds the N-slot down path.
+
+**Expert cache for models larger than RAM** (simulated on real Qwen3 routing): a cache of 30% of experts gives 86% LRU hits and 94% optimal (Belady). The user chose to stay on kernels, so this is backlog #12.
+
+**Speculative decoding for single-stream MoE: killed.** Qwen3.5/3.6 recurrent caches are not trimmable in mlx-lm.
+
+**gpt-oss MXFP4 for mlx-lm** (follow-up to #2044):
+- On real gpt-oss-20b weights, per-slot outputs (what `SwitchGLU` returns) cost almost nothing vs our dedicated k-summed path: layer speedup vs stock 1.09× (T=1), 1.52× (T=8), 1.84× (T=32).
+- Branch `Tigerly1/mlx-lm:moe-kernels-mxfp4` adds MXFP4 pair/group kernels with biases and SwigluOAI to `switch_kernels.py`. 414 mlx-lm tests pass, including the new MXFP4 match/gradient/fallback tests.
+- The `mlx_lm benchmark` A/B is **not yet valid**: it ran on battery while the antivirus scanner used 356% CPU, and main itself varied 2× between passes. It needs a re-run on AC.
+
 ## 2026-11-07 — upstream: PRs to ml-explore/mlx-lm
 
 - **2026-11-08 update:** PR 1 (#2043) was closed to make room. **PR 2 is open as [ml-explore/mlx-lm#2044](https://github.com/ml-explore/mlx-lm/pull/2044).** The empty-prompt fix stays on the fork (`server-reject-empty-prompt`) for later.
