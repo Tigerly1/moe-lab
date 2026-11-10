@@ -57,10 +57,12 @@ def gemma4():
 
 def lfm2_moe():
     l = pytest.importorskip("mlx_lm.models.lfm2_moe")
+    # routed_scaling_factor exists only in newer mlx-lm (absent in 0.31.3)
+    extra = dict(routed_scaling_factor=2.0) if "routed_scaling_factor" in l.ModelArgs.__dataclass_fields__ else {}
     m = l.Model(l.ModelArgs(model_type="lfm2_moe", moe_intermediate_size=128, num_hidden_layers=3, num_experts=16,
                             num_experts_per_tok=4, norm_topk_prob=True, max_position_embeddings=4096,
                             use_expert_bias=True, num_dense_layers=1, norm_eps=1e-5, conv_bias=False, conv_L_cache=3,
-                            routed_scaling_factor=2.0, full_attn_idxs=[1], **COMMON))
+                            full_attn_idxs=[1], **extra, **COMMON))
     for layer in m.model.layers:
         b = getattr(layer.feed_forward, "expert_bias", None) if hasattr(layer, "feed_forward") else None
         if b is not None:

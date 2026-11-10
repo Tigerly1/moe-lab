@@ -1,0 +1,154 @@
+# Verification pass 2026-11-10, queue 1 (battery; several runs contended, see guard lines)
+#### B tiles (per tile size: stock, real kernel, decode-ablated)
+qwen3-30b-a3b probe 220 GB/s
+n=1 T=16 experts=128 floor   1548us | mlxlm_switchglu_q4   1683us  92.0% | tv2_base   1691us  91.6% | tv2_nda   1652us  93.7% | tv2_ndb   1700us  91.0% | last vs first 0.990x
+n=2 T=32 experts=128 floor   1551us | mlxlm_switchglu_q4   2559us  60.6% | tv2_base   2251us  68.9% | tv2_nda   2296us  67.5% | tv2_ndb   2005us  77.3% | last vs first 1.276x
+n=3 T=24 experts= 64 floor    776us | mlxlm_switchglu_q4   1907us  40.7% | tv2_base   1249us  62.2% | tv2_nda   1228us  63.2% | tv2_ndb   1247us  62.3% | last vs first 1.530x
+n=4 T=32 experts= 64 floor    778us | mlxlm_switchglu_q4   2621us  29.7% | tv2_base   1309us  59.4% | tv2_nda   1283us  60.6% | tv2_ndb   1252us  62.1% | last vs first 2.094x
+n=8 T=32 experts= 32 floor    391us | mlxlm_switchglu_q4   2651us  14.8% | tv2_base    704us  55.6% | tv2_nda    694us  56.3% | tv2_ndb    692us  56.6% | last vs first 3.831x
+n=1 T= 8 experts= 64 floor    774us | mlxlm_switchglu_q4    921us  84.1% | tv2_base    974us  79.5% | tv2_nda    915us  84.6% | tv2_ndb    940us  82.3% | last vs first 0.980x
+n=2 T=16 experts= 64 floor    775us | mlxlm_switchglu_q4   1347us  57.6% | tv2_base   1175us  66.0% | tv2_nda   1152us  67.3% | tv2_ndb   1005us  77.2% | last vs first 1.341x
+guard: probe min 191 GB/s vs p90 240 for Apple M4 Pro|battery (80%) -> CONTENDED - absolute numbers unreliable, close other GPU users and re-run
+#### A full-decode ablation
+== ndb qwen3-30b-a3b
+A=tv2_base.py  B=tv2_ndb.py  shape=qwen3-30b-a3b bfloat16 uniform  3 launches x 4 rounds
+T=  8  A    787.4us  B    738.0us  B is 1.067x  [95% CI 1.037-1.085, by launch]  err A 3.5e-03 B nan
+T= 16  A   1217.1us  B   1159.2us  B is 1.050x  [95% CI 1.012-1.131, by launch]  err A 3.4e-03 B nan
+T= 32  A   1808.3us  B   1625.1us  B is 1.113x  [95% CI 1.083-1.127, by launch]  err A 3.4e-03 B nan
+guard: probe min 181 GB/s vs p90 240 for Apple M4 Pro|battery (75%) -> CONTENDED - absolute numbers unreliable, close other GPU users and re-run
+== ndb deepseek-v2-lite
+A=tv2_base.py  B=tv2_ndb.py  shape=deepseek-v2-lite bfloat16 uniform  3 launches x 4 rounds
+T=  8  A    884.5us  B    882.3us  B is 1.003x  [95% CI 0.990-1.036, by launch]  err A 3.5e-03 B nan
+T= 16  A   1373.1us  B   1288.7us  B is 1.065x  [95% CI 1.026-1.146, by launch]  err A 3.4e-03 B nan
+T= 32  A   2147.1us  B   1909.4us  B is 1.125x  [95% CI 1.047-1.186, by launch]  err A 3.4e-03 B nan
+guard: probe min 165 GB/s vs p90 240 for Apple M4 Pro|battery (69%) -> CONTENDED - absolute numbers unreliable, close other GPU users and re-run
+== nda qwen3-30b-a3b
+A=tv2_base.py  B=tv2_nda.py  shape=qwen3-30b-a3b bfloat16 uniform  3 launches x 4 rounds
+T=  8  A    752.8us  B    747.1us  B is 1.008x  [95% CI 0.974-1.031, by launch]  err A 3.5e-03 B nan
+T= 16  A   1148.4us  B   1143.7us  B is 1.004x  [95% CI 0.933-1.054, by launch]  err A 3.4e-03 B nan
+T= 32  A   1836.1us  B   1756.0us  B is 1.046x  [95% CI 1.018-1.061, by launch]  err A 3.4e-03 B nan
+guard: probe min 182 GB/s vs p90 236 for Apple M4 Pro|battery (77%) -> CONTENDED - absolute numbers unreliable, close other GPU users and re-run
+== nda deepseek-v2-lite
+A=tv2_base.py  B=tv2_nda.py  shape=deepseek-v2-lite bfloat16 uniform  3 launches x 4 rounds
+T=  8  A    875.3us  B    887.3us  B is 0.986x  [95% CI 0.946-1.013, by launch]  err A 3.5e-03 B nan
+T= 16  A   1355.2us  B   1277.7us  B is 1.061x  [95% CI 1.039-1.110, by launch]  err A 3.4e-03 B nan
+T= 32  A   1916.5us  B   1850.3us  B is 1.036x  [95% CI 0.960-1.075, by launch]  err A 3.4e-03 B nan
+guard: probe min 183 GB/s vs p90 225 for Apple M4 Pro|battery (82%) -> CONTENDED - absolute numbers unreliable, close other GPU users and re-run
+== ndsmall qwen3-30b-a3b
+A=tv2_base.py  B=tv2_ndsmall.py  shape=qwen3-30b-a3b bfloat16 uniform  3 launches x 4 rounds
+T=  8  A    614.5us  B    625.3us  B is 0.983x  [95% CI 0.972-1.070, by launch]  err A 3.5e-03 B nan
+T= 16  A   1031.7us  B   1013.6us  B is 1.018x  [95% CI 0.978-1.049, by launch]  err A 3.4e-03 B nan
+T= 32  A   1514.9us  B   1502.1us  B is 1.009x  [95% CI 0.997-1.052, by launch]  err A 3.4e-03 B nan
+guard: probe min 202 GB/s vs p90 222 for Apple M4 Pro|battery (91%) -> CONTENDED - absolute numbers unreliable, close other GPU users and re-run
+== ndsmall deepseek-v2-lite
+A=tv2_base.py  B=tv2_ndsmall.py  shape=deepseek-v2-lite bfloat16 uniform  3 launches x 4 rounds
+T=  8  A    798.0us  B    794.3us  B is 1.005x  [95% CI 0.987-1.056, by launch]  err A 3.5e-03 B nan
+T= 16  A   1167.6us  B   1125.3us  B is 1.038x  [95% CI 1.034-1.047, by launch]  err A 3.4e-03 B nan
+T= 32  A   1737.0us  B   1724.3us  B is 1.007x  [95% CI 0.999-1.031, by launch]  err A 3.4e-03 B nan
+guard: probe min 170 GB/s vs p90 232 for Apple M4 Pro|battery (73%) -> CONTENDED - absolute numbers unreliable, close other GPU users and re-run
+#### C stock vs ours (layer)
+== gemma4 dims
+A=mlxlm_switchglu_q4.py  B=metal_q4_moe.py  shape=qwen3-30b-a3b bfloat16 uniform  3 launches x 4 rounds
+T= 16  A   1702.8us  B   1226.6us  B is 1.388x  [95% CI 1.350-1.400, by launch]  err A 7.0e-03 B 3.4e-03
+T= 32  A   3193.5us  B   1960.3us  B is 1.629x  [95% CI 1.620-1.669, by launch]  err A 6.9e-03 B 3.5e-03
+T= 64  A   4983.1us  B   2650.1us  B is 1.880x  [95% CI 1.874-1.886, by launch]  err A 6.3e-03 B 3.5e-03
+guard: probe min 221 GB/s vs p90 237 for Apple M4 Pro|battery (93%) -> ok
+== qwen3.6 dims
+A=mlxlm_switchglu_q4.py  B=metal_q4_moe.py  shape=qwen3-30b-a3b bfloat16 uniform  3 launches x 4 rounds
+T=  8  A    493.3us  B    490.2us  B is 1.006x  [95% CI 0.990-1.035, by launch]  err A 6.8e-03 B 3.4e-03
+T= 32  A   1567.6us  B   1347.2us  B is 1.164x  [95% CI 1.152-1.183, by launch]  err A 6.8e-03 B 3.5e-03
+guard: probe min 174 GB/s vs p90 239 for Apple M4 Pro|battery (73%) -> CONTENDED - absolute numbers unreliable, close other GPU users and re-run
+== qwen3
+A=mlxlm_switchglu_q4.py  B=metal_q4_moe.py  shape=qwen3-30b-a3b bfloat16 uniform  3 launches x 4 rounds
+T=  1  A    134.4us  B    114.5us  B is 1.174x  [95% CI 1.027-1.233, by launch]  err A 6.8e-03 B 3.5e-03
+T=  8  A    702.0us  B    631.4us  B is 1.112x  [95% CI 1.055-1.140, by launch]  err A 6.7e-03 B 3.5e-03
+T= 32  A   2319.6us  B   1504.7us  B is 1.542x  [95% CI 1.511-1.556, by launch]  err A 6.9e-03 B 3.4e-03
+guard: probe min 193 GB/s vs p90 240 for Apple M4 Pro|battery (80%) -> CONTENDED - absolute numbers unreliable, close other GPU users and re-run
+== deepseek
+A=mlxlm_switchglu_q4.py  B=metal_q4_moe.py  shape=deepseek-v2-lite bfloat16 uniform  3 launches x 4 rounds
+T=  1  A    165.7us  B    142.0us  B is 1.167x  [95% CI 1.162-1.175, by launch]  err A 6.5e-03 B 3.3e-03
+T=  8  A    960.8us  B    724.6us  B is 1.326x  [95% CI 1.303-1.334, by launch]  err A 6.4e-03 B 3.4e-03
+T= 32  A   2916.5us  B   1759.1us  B is 1.658x  [95% CI 1.649-1.734, by launch]  err A 6.5e-03 B 3.4e-03
+guard: probe min 239 GB/s vs p90 243 for Apple M4 Pro|battery (98%) -> ok
+#### D slope / floor
+qwen3-30b-a3b T=1 uniform windows=80: residual-add-only slope 2.8us (fixed 167us)
+  mlxlm_switchglu_q4     per-call   114.3us  minus residual   111.5us  fixed/eval    208us  floor   85.1us   76.3% of floor@250  speedup 1.000x
+  metal_q4_moe           per-call    92.8us  minus residual    90.0us  fixed/eval    190us  floor   85.1us   94.5% of floor@250  speedup 1.239x
+guard: probe min 236 GB/s vs p90 244 for Apple M4 Pro|battery (97%) -> ok
+qwen3-30b-a3b T=8 uniform windows=80: residual-add-only slope 2.4us (fixed 208us)
+  mlxlm_switchglu_q4     per-call   689.1us  minus residual   686.7us  fixed/eval    208us  floor  549.9us   80.1% of floor@250  speedup 1.000x
+  metal_q4_moe           per-call   620.0us  minus residual   617.6us  fixed/eval    208us  floor  549.9us   89.0% of floor@250  speedup 1.112x
+guard: probe min 239 GB/s vs p90 245 for Apple M4 Pro|battery (98%) -> ok
+qwen3-30b-a3b T=32 uniform windows=80: residual-add-only slope 3.2us (fixed 192us)
+  mlxlm_switchglu_q4     per-call  2273.6us  minus residual  2270.4us  fixed/eval    265us  floor 1192.4us   52.5% of floor@250  speedup 1.000x
+  metal_q4_moe           per-call  1485.1us  minus residual  1481.9us  fixed/eval    -64us  floor 1192.4us   80.5% of floor@250  speedup 1.532x
+guard: probe min 238 GB/s vs p90 245 for Apple M4 Pro|battery (97%) -> ok
+deepseek-v2-lite T=1 uniform windows=80: residual-add-only slope 0.8us (fixed 255us)
+  mlxlm_switchglu_q4     per-call   147.6us  minus residual   146.8us  fixed/eval    244us  floor  117.0us   79.6% of floor@250  speedup 1.000x
+  metal_q4_moe           per-call   125.8us  minus residual   125.0us  fixed/eval    129us  floor  117.0us   93.5% of floor@250  speedup 1.175x
+guard: probe min 244 GB/s vs p90 245 for Apple M4 Pro|battery (100%) -> ok
+#### done
+
+# Queue 3: re-run (AC)
+#### D slope x3
+  mlxlm_switchglu_q4     per-call   812.4us  minus residual   806.8us  fixed/eval   -379us  floor  549.9us   68.2% of floor@250  speedup 1.000x
+  metal_q4_moe           per-call   749.7us  minus residual   744.1us  fixed/eval    216us  floor  549.9us   73.9% of floor@250  speedup 1.084x
+guard: probe min 208 GB/s vs p90 241 for Apple M4 Pro|ac (86%) -> CONTENDED - absolute numbers unreliable, close other GPU users and re-run
+  mlxlm_switchglu_q4     per-call  2606.9us  minus residual  2602.4us  fixed/eval     34us  floor 1192.4us   45.8% of floor@250  speedup 1.000x
+  metal_q4_moe           per-call  1675.3us  minus residual  1670.8us  fixed/eval    293us  floor 1192.4us   71.4% of floor@250  speedup 1.558x
+guard: probe min 208 GB/s vs p90 241 for Apple M4 Pro|ac (86%) -> CONTENDED - absolute numbers unreliable, close other GPU users and re-run
+  mlxlm_switchglu_q4     per-call   781.3us  minus residual   777.6us  fixed/eval    381us  floor  549.9us   70.7% of floor@250  speedup 1.000x
+  metal_q4_moe           per-call   666.1us  minus residual   662.4us  fixed/eval    394us  floor  549.9us   83.0% of floor@250  speedup 1.174x
+guard: probe min 212 GB/s vs p90 241 for Apple M4 Pro|ac (88%) -> CONTENDED - absolute numbers unreliable, close other GPU users and re-run
+  mlxlm_switchglu_q4     per-call  2558.2us  minus residual  2555.0us  fixed/eval    124us  floor 1192.4us   46.7% of floor@250  speedup 1.000x
+  metal_q4_moe           per-call  1683.7us  minus residual  1680.4us  fixed/eval    -97us  floor 1192.4us   71.0% of floor@250  speedup 1.520x
+guard: probe min 143 GB/s vs p90 240 for Apple M4 Pro|ac (59%) -> CONTENDED - absolute numbers unreliable, close other GPU users and re-run
+  mlxlm_switchglu_q4     per-call   776.7us  minus residual   774.3us  fixed/eval    432us  floor  549.9us   71.0% of floor@250  speedup 1.000x
+  metal_q4_moe           per-call   687.3us  minus residual   684.9us  fixed/eval    388us  floor  549.9us   80.3% of floor@250  speedup 1.131x
+guard: probe min 224 GB/s vs p90 240 for Apple M4 Pro|ac (93%) -> ok
+  mlxlm_switchglu_q4     per-call  2537.0us  minus residual  2534.0us  fixed/eval    478us  floor 1192.4us   47.1% of floor@250  speedup 1.000x
+  metal_q4_moe           per-call  1741.6us  minus residual  1738.5us  fixed/eval    884us  floor 1192.4us   68.6% of floor@250  speedup 1.458x
+guard: probe min 226 GB/s vs p90 237 for Apple M4 Pro|ac (95%) -> ok
+#### B tiles
+qwen3-30b-a3b probe 230 GB/s
+n=1 T=16 experts=128 floor   1482us | mlxlm_switchglu_q4   1626us  91.1% | tv2_base   1578us  93.9% | tv2_nda   1549us  95.6% | tv2_ndb   1567us  94.6% | probe 236
+n=2 T=32 experts=128 floor   1484us | mlxlm_switchglu_q4   2483us  59.8% | tv2_base   2257us  65.8% | tv2_nda   2174us  68.3% | tv2_ndb   1792us  82.8% | probe 231
+n=3 T=24 experts= 64 floor    743us | mlxlm_switchglu_q4   1869us  39.8% | tv2_base   1248us  59.6% | tv2_nda   1191us  62.4% | tv2_ndb   1200us  61.9% | probe 231
+n=4 T=32 experts= 64 floor    744us | mlxlm_switchglu_q4   2473us  30.1% | tv2_base   1254us  59.3% | tv2_nda   1215us  61.2% | tv2_ndb   1204us  61.8% | probe 233
+n=8 T=32 experts= 32 floor    374us | mlxlm_switchglu_q4   2462us  15.2% | tv2_base    685us  54.7% | tv2_nda    656us  57.1% | tv2_ndb    650us  57.6% | probe 230
+guard: probe min 230 GB/s vs p90 236 for Apple M4 Pro|ac (97%) -> ok
+#### A
+== nda qwen3
+A=tv2_base.py  B=tv2_nda.py  shape=qwen3-30b-a3b bfloat16 uniform  4 launches x 4 rounds
+T=  8  A    724.5us  B    697.3us  B is 1.039x  [95% CI 1.021-1.057, by launch]  err A 3.4e-03 B nan
+T= 16  A   1074.6us  B   1039.3us  B is 1.034x  [95% CI 1.026-1.080, by launch]  err A 3.4e-03 B nan
+T= 32  A   1700.7us  B   1614.2us  B is 1.054x  [95% CI 1.042-1.063, by launch]  err A 3.4e-03 B nan
+guard: probe min 212 GB/s vs p90 236 for Apple M4 Pro|ac (90%) -> CONTENDED - absolute numbers unreliable, close other GPU users and re-run
+== nda deepseek
+A=tv2_base.py  B=tv2_nda.py  shape=deepseek-v2-lite bfloat16 uniform  4 launches x 4 rounds
+T= 32  A   1885.1us  B   1801.8us  B is 1.046x  [95% CI 1.042-1.051, by launch]  err A 3.4e-03 B nan
+guard: probe min 222 GB/s vs p90 236 for Apple M4 Pro|ac (94%) -> ok
+== ndb qwen3
+A=tv2_base.py  B=tv2_ndb.py  shape=qwen3-30b-a3b bfloat16 uniform  4 launches x 4 rounds
+T=  8  A    723.9us  B    696.1us  B is 1.040x  [95% CI 1.028-1.048, by launch]  err A 3.4e-03 B nan
+T= 16  A   1069.2us  B   1014.3us  B is 1.054x  [95% CI 1.020-1.078, by launch]  err A 3.4e-03 B nan
+T= 32  A   1686.8us  B   1550.8us  B is 1.088x  [95% CI 1.086-1.102, by launch]  err A 3.4e-03 B nan
+guard: probe min 217 GB/s vs p90 236 for Apple M4 Pro|ac (92%) -> CONTENDED - absolute numbers unreliable, close other GPU users and re-run
+== ndb deepseek
+A=tv2_base.py  B=tv2_ndb.py  shape=deepseek-v2-lite bfloat16 uniform  4 launches x 4 rounds
+T= 32  A   1888.1us  B   1762.1us  B is 1.071x  [95% CI 1.066-1.082, by launch]  err A 3.4e-03 B nan
+guard: probe min 222 GB/s vs p90 236 for Apple M4 Pro|ac (94%) -> ok
+#### C
+== qwen3.6 dims
+A=mlxlm_switchglu_q4.py  B=metal_q4_moe.py  shape=qwen3-30b-a3b bfloat16 uniform  3 launches x 4 rounds
+T=  8  A    572.4us  B    572.3us  B is 1.000x  [95% CI 0.985-1.028, by launch]  err A 6.8e-03 B 3.5e-03
+T= 32  A   1716.8us  B   1497.6us  B is 1.146x  [95% CI 1.146-1.179, by launch]  err A 6.9e-03 B 3.5e-03
+guard: probe min 209 GB/s vs p90 236 for Apple M4 Pro|ac (88%) -> CONTENDED - absolute numbers unreliable, close other GPU users and re-run
+== qwen3
+A=mlxlm_switchglu_q4.py  B=metal_q4_moe.py  shape=qwen3-30b-a3b bfloat16 uniform  3 launches x 4 rounds
+T=  1  A    134.2us  B    111.4us  B is 1.205x  [95% CI 1.185-1.241, by launch]  err A 6.9e-03 B 3.3e-03
+T=  8  A    791.2us  B    714.9us  B is 1.107x  [95% CI 1.100-1.118, by launch]  err A 6.9e-03 B 3.5e-03
+T= 32  A   2558.7us  B   1675.2us  B is 1.527x  [95% CI 1.520-1.550, by launch]  err A 6.9e-03 B 3.4e-03
+guard: probe min 204 GB/s vs p90 237 for Apple M4 Pro|ac (86%) -> CONTENDED - absolute numbers unreliable, close other GPU users and re-run
+ -InternalBattery-0 (id=22741091)	46%; charging; 20:00 remaining present: true
+#### done

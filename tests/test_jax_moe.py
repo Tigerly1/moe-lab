@@ -1,7 +1,9 @@
 """JAX backend (XLA ragged_dot + Pallas grouped GEMM, interpret mode) vs numpy fp64 reference."""
-import jax.numpy as jnp
 import numpy as np
 import pytest
+
+pytest.importorskip("jax")
+import jax.numpy as jnp
 
 from moelab import jax_moe
 from moelab.problem import error_metrics, make_problem, reference

@@ -1,0 +1,24 @@
+== noshuf qwen3-30b-a3b
+A=tv2_base.py  B=tv2_noshuf.py  shape=qwen3-30b-a3b bfloat16 uniform  3 launches x 4 rounds
+T=  8  A    714.4us  B    698.8us  B is 1.022x  [95% CI 1.010-1.046, by launch]  err A 3.5e-03 B 4.2e-01
+T= 16  A   1081.1us  B   1064.6us  B is 1.016x  [95% CI 1.007-1.026, by launch]  err A 3.5e-03 B 5.3e-01
+T= 32  A   1491.8us  B   1497.5us  B is 0.996x  [95% CI 0.928-1.011, by launch]  err A 3.5e-03 B 1.1e+00
+guard: probe min 231 GB/s vs p90 247 for Apple M4 Pro|battery (93%) -> ok
+== noshuf deepseek-v2-lite
+A=tv2_base.py  B=tv2_noshuf.py  shape=deepseek-v2-lite bfloat16 uniform  3 launches x 4 rounds
+T=  8  A    713.3us  B    711.8us  B is 1.002x  [95% CI 1.000-1.005, by launch]  err A 3.4e-03 B 1.5e-01
+T= 16  A   1147.4us  B   1149.7us  B is 0.998x  [95% CI 0.995-1.002, by launch]  err A 3.5e-03 B 8.4e-01
+T= 32  A   1685.7us  B   1682.6us  B is 1.002x  [95% CI 0.998-1.007, by launch]  err A 3.4e-03 B 1.2e+00
+guard: probe min 239 GB/s vs p90 245 for Apple M4 Pro|battery (97%) -> ok
+== nodeq qwen3-30b-a3b
+A=tv2_base.py  B=tv2_nodeq.py  shape=qwen3-30b-a3b bfloat16 uniform  3 launches x 4 rounds
+T=  8  A    630.6us  B    607.1us  B is 1.039x  [95% CI 1.036-1.048, by launch]  err A 3.5e-03 B nan
+T= 16  A    998.8us  B    971.2us  B is 1.028x  [95% CI 1.025-1.034, by launch]  err A 3.5e-03 B nan
+T= 32  A   1476.4us  B   1437.5us  B is 1.027x  [95% CI 1.024-1.030, by launch]  err A 3.5e-03 B nan
+guard: probe min 233 GB/s vs p90 245 for Apple M4 Pro|battery (95%) -> ok
+== nodeq deepseek-v2-lite
+A=tv2_base.py  B=tv2_nodeq.py  shape=deepseek-v2-lite bfloat16 uniform  3 launches x 4 rounds
+T=  8  A    713.5us  B    710.6us  B is 1.004x  [95% CI 0.994-1.009, by launch]  err A 3.4e-03 B nan
+T= 16  A   1145.8us  B   1131.0us  B is 1.013x  [95% CI 1.011-1.023, by launch]  err A 3.5e-03 B nan
+T= 32  A   1678.1us  B   1634.3us  B is 1.027x  [95% CI 1.020-1.032, by launch]  err A 3.4e-03 B nan
+guard: probe min 241 GB/s vs p90 243 for Apple M4 Pro|battery (99%) -> ok

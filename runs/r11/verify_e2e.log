@@ -1,0 +1,23 @@
+ -InternalBattery-0 (id=22741091)	64%; discharging; 1:01 remaining present: true
+== gemma4 batch fused
+B=  1: stock    79.9 tok/s  variant    87.0 tok/s  speedup 1.089x  (stock 79.5-79.9, variant 86.1-87.1) identical-prefix median 1/128
+B=  8: stock   155.3 tok/s  variant   193.9 tok/s  speedup 1.248x  (stock 137.1-155.4, variant 178.3-194.0) identical-prefix median 20/128
+B= 32: stock   219.2 tok/s  variant   370.6 tok/s  speedup 1.691x  (stock 207.9-228.8, variant 370.3-389.9) identical-prefix median 13/128
+guard: probe min 190 GB/s vs p90 245 for Apple M4 Pro|battery (77%) -> CONTENDED - absolute numbers unreliable, close other GPU users and re-run
+== qwen3 single stream fused
+guard: probe min 214 GB/s vs p90 245 for Apple M4 Pro|battery (87%) -> CONTENDED - absolute numbers unreliable, close other GPU users and re-run
+stock   88.8 tok/s  [88.75334999634968, 89.34167552513242, 85.58244242732648]
+variant 104.6 tok/s  [102.56355040097587, 104.84109023236257, 104.63001615436012]
+speedup 1.179x | greedy tokens identical: 12/512 (first diff at 2)
+== qwen3 batch fused
+B=  1: stock    86.4 tok/s  variant   101.9 tok/s  speedup 1.179x  (stock 71.8-88.2, variant 94.8-102.5) identical-prefix median 16/128
+B=  8: stock   156.2 tok/s  variant   189.5 tok/s  speedup 1.214x  (stock 151.7-156.4, variant 176.9-189.9) identical-prefix median 25/128
+B= 32: stock   210.4 tok/s  variant   335.9 tok/s  speedup 1.596x  (stock 208.4-217.8, variant 323.3-339.2) identical-prefix median 23/128
+guard: probe min 202 GB/s vs p90 245 for Apple M4 Pro|battery (82%) -> CONTENDED - absolute numbers unreliable, close other GPU users and re-run
+== qwen3.6 single stream chat fused
+guard: probe min 212 GB/s vs p90 241 for Apple M4 Pro|ac (88%) -> CONTENDED - absolute numbers unreliable, close other GPU users and re-run
+stock   78.7 tok/s  [77.225245152625, 81.44437893923515, 78.66841819613383]
+variant 91.4 tok/s  [91.98874936922955, 89.11796732031625, 91.40868799813155]
+speedup 1.162x | greedy tokens identical: 48/512 (first diff at 38)
+ -InternalBattery-0 (id=22741091)	45%; AC attached; not charging present: true
+#### done
