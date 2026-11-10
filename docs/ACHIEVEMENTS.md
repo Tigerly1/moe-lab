@@ -3,6 +3,22 @@
 Verified results only: re-measured (≥2 process launches or `moelab.compare`), guard ok. Newest first.
 Hardware: Apple M4 Pro, 48 GB, unless stated. Details and caveats: `docs/RESULTS.md`.
 
+## 2026-11-10 — round 11: where the T=32 time goes (weight decoding is not it)
+
+Kernel-only harness (`moelab.compare`, `moelab.slope`), Qwen3-30B shape, bf16, uniform routing, M4 Pro on battery (guard ok).
+Ablations are timing-only copies of `metal_q4_tiles_v2` with deliberately wrong outputs.
+
+| ablation (MMA path) | T=8 | T=16 | T=32 |
+|---|---|---|---|
+| no bit shuffle (`pg`/`pu`/`pw` repack) | 1.00–1.02× | 1.00–1.02× | 1.00× |
+| no shuffle and no dequant (`q\|0x6400` → `P^s`) | 1.00–1.04× | 1.01–1.03× | **1.027×** |
+| +256 empty threadgroup rows | — | — | 0.98× (CI 0.91–1.01) |
+
+- **Killed: weight repacking and LUT/T-MAC decoding.** Removing all decode work gains at most ~3% at T=32, so no decode scheme can recover the 27% gap to the floor (73% at T=32, 97% at T=8, `moelab.slope`).
+- **Not the cause: empty threadgroups.** Non-leader slots launch threadgroups that exit at once; 256 extra empty rows cost ≤2%.
+- **Where the gap sits:** per-stage timing (`scratchpad stages.py`, noisy) puts gate_up at ~70% of its own floor at T=32 (~87% at T=8). Down is ~80%. Next suspects: short per-simdgroup work on the 1- and 2-slot GEMV paths (RS=1 row per simdgroup), and partially filled 8×8 MMA tiles.
+- This corrects round 10's "ALU-bound on weight decoding" wording: the path is not bandwidth-bound at T=32, but decode ALU is not the limiter.
+
 ## 2026-11-08 — round 10: T=32 search (killed), expert-cache feasibility, MXFP4 for mlx-lm
 
 **T=32 tile search** (background agent, kill criterion ≥ 5%): **killed.**
