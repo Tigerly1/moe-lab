@@ -4,6 +4,38 @@ Verified results only: re-measured (≥2 process launches or `moelab.compare`), 
 Entries that do not meet this rule are marked in place (see the 2026-11-10 verification pass).
 Hardware: Apple M4 Pro, 48 GB, unless stated. Details and caveats: `docs/RESULTS.md`.
 
+## 2026-11-11 — audit of the open PR ml-explore/mlx-lm#2044
+
+Question: is the published PR (head `ea3da29`) still correct, and does it make sense on other Apple GPUs (M5, M6)?
+Evidence: `runs/r12/pr2044_audit.log`, scripts next to it. Measured on the M4 Pro only.
+
+**Holds (M4 Pro):**
+- Kernel path vs stock vs fp32 truth: 1,136 synthetic cases (8 shapes, 4 routings, bf16/fp16), 0 bad. Worst error vs fp32: ours 5.0e-3, stock 7.9e-3. Shape and dtype equal stock.
+- Real model (LFM2.5-8B, chat prompt): logits error vs fp32 is 4.7e-2 on the kernel path and 6.2e-2 on stock; generated text identical.
+- Raw prompt: the kernel path gives the same text as fp32; bf16 stock is the arm that diverges.
+- mlx-lm unit suite: 411 tests on the head, 413 with the fix.
+
+**Wrong in the published PR:**
+- **Zero tokens:** the branch raises (Metal library does not build); stock returns an empty array.
+- **Top-k > 32 at T = 1:** threadgroup limit exceeded (k = 40). No current model has k > 8.
+- **Mixed precision** (fp32 scales, bf16 input): the branch returns bf16, stock fp32. Converted models do not have this mix.
+- **PR text:** "prefill unchanged within noise" is false at B=1: prefill is 8–20% faster (unchanged at B=8/32).
+- **M5 and later:** from 4 tokens per expert MLX runs `gather_qmm` on the NAX kernels. The published gate (load ≤ 8 or ≤ 24) replaces that path without any measurement against it.
+
+**Fix (local commit `42e5d30`, not pushed; `runs/r12/pr2044_fix.patch`):**
+- Fall back on zero tokens, k > 8 and scale dtype ≠ input dtype.
+- On GPU generation ≥ 17 use the kernels only at load < 4, where stock still runs `gather_qmv`. M1–M4 gate unchanged.
+- Decode at B=32 stays on the kernels for Qwen3, Gemma-4, GLM (load 2) and DeepSeek (3). LFM2.5 (load 4) and the B=1 prefill fall back there.
+- Proposed PR text with a hardware-scope section: `runs/r12/pr2044_body_proposed.md`.
+
+**Not known:**
+- Any speed number on M1–M3, base/Max/Ultra, M5 or M6. The M5+ gate is a safety limit, not a measured crossover.
+- Upstream now has `mlx_lm/kernels/` (one fused Metal kernel per file, with its own GPU-generation check). The PR module sits in `mlx_lm/models/`; moving it is offered in the PR text, not done.
+
+**Corrected in this log:** the 2026-11-10 pass changed the upstream B=1 range to 1.03–1.09×. The log gives 1.033–1.084×, so 1.03–1.08× was right.
+
+**Mistake caught during the audit:** I first narrowed the M4 gate to load ≤ 8 from three grid shapes (1.03–1.09× at load 12–24). The stored benchmark shows a real gain there for larger experts (DeepSeek B=1 prefill 1.15× at load 12, LFM2.5 1.08× at load 16), so the measured gate was restored.
+
 ## 2026-11-10 — verification pass over this log
 
 Independent re-check of the entries below: both test environments, the stored result files, and fresh runs.
@@ -20,7 +52,6 @@ Evidence: `runs/r11/` (`verify_kernels.log`, `verify_e2e.log`, `verify_tests.log
 - "1.48× faster than llama.cpp" holds only at 32 clients. At 8 clients it is 0.99×, at 1 client 1.05× (`runs/r8/`).
 - Server table, Gemma-4 at 32 clients: 1.43× is the mean of two rounds at 1.32× and 1.54×. Qwen3.6: 1.09–1.18×. The server JSONs store no guard status.
 - GLM-4.7-Flash batch numbers (1.12× / 1.27×) come from one launch.
-- Upstream benchmark, B=1: the range is 1.03–1.09×, not 1.03–1.08×.
 - Test count: 778 is the `.venv-latest` (mlx-lm 0.32.2) number. On the pinned `.venv` (0.31.3) 5 `lfm2_moe` tests failed on a fixture kwarg that only newer mlx-lm has, and `pytest tests` failed at collection without jax. Both fixed: now 786 pass on `.venv` and 778 on `.venv-latest` (`runs/r11/verify_tests.log`).
 
 **Confirmed:**
@@ -113,7 +144,7 @@ Ablations are timing-only copies of `metal_q4_tiles_v2` with deliberately wrong 
     | GLM-4.7-Flash | 1.40× |
     | LFM2.5 | 1.38× |
 
-    B=1 is 1.03–1.09× (`runs/r9/upstream_mlx_lm_benchmark.log`).
+    B=1 is 1.03–1.08× (`runs/r9/upstream_mlx_lm_benchmark.log`).
   - GitHub refused to create it right after PR 1 (`CreatePullRequest` permission error; REST 404). This is probably a limit for first-time contributors. Open it once #2043 is reviewed, or from the web link.
 - **Measurement pitfall caught before publishing:** the first A/B run `cd`'d into the branch checkout, so `python -m` loaded the branch in both arms (identical numbers). Fixed by running from a neutral directory and printing which code is imported.
 

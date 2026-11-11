@@ -1,0 +1,66 @@
+PR ml-explore/mlx-lm#2044 audit, 2026-11-11, Apple M4 Pro (applegpu_g16s), macOS 26, mlx 0.32.4.
+Published head ea3da29; local fix 42e5d30 (not pushed), patch in pr2044_fix.patch. Scripts in this directory; run with PYTHONPATH=<mlx-lm checkout>.
+
+== stress.py on the fixed branch (kernel path vs stock vs fp32 truth, 8 shapes, 4 routings, bf16/fp16)
+cases 1136  worst rel err vs fp32: ours 4.99e-03 stock 7.94e-03  worst ours/stock ratio 1.24  bad 0
+T=0 (1, 0) stock -> (1, 0, 4, 256)
+T=0 (1, 0) branch -> (1, 0, 4, 256)
+T=0 (0, 1) stock -> (0, 1, 4, 256)
+T=0 (0, 1) branch -> (0, 1, 4, 256)
+int32 idx err vs stock 0.0
+mx.compile err vs stock 0.0 second call 0.0
+(on ea3da29 the same error numbers; T=0 on the branch raised "RuntimeError: [metal::Device] Unable to build metal library from source")
+
+== kbig.py on ea3da29: top-k at T = 1
+k = 16, 32 ok; k = 40: ValueError: Thread group size (1280) is greater than the maximum allowed threads per threadgroup (1024)
+
+== mlx-lm unit suite on the fixed branch
+python -m unittest discover tests: Ran 413 tests, OK (skipped=1)
+
+== real_gate.py, LFM2.5-8B-A1B-MLX-4bit, fixed branch
+286 SwitchGLU calls at T = 1 and 22 at T = 4, all on the kernel path; bf16 input, bf16 scales; peak 4.4 GB
+
+== real_ab.py / real_ab2.py, LFM2.5-8B-A1B-MLX-4bit, chat prompt, 22 tokens, one forward pass (T = 22 path)
+bf16 kernel vs bf16 stock 4.35e-02, argmax agree 0.909, first 24 generated tokens identical
+bf16 kernel vs fp32 stock 4.70e-02
+bf16 stock  vs fp32 stock 6.19e-02
+argmax agree with fp32 stock: bf16 kernel 20, bf16 stock 18, of 22
+(the fp32 "kernel" arm is the fallback: the kernels take bf16/fp16 only)
+
+== raw prompt "The capital of France is" (no chat template), greedy, 12 tokens
+bf16 kernel: 'the the the the the the the the the the the the'
+bf16 stock : 'the capital of France is the capital of France is the capital'
+fp32 stock : 'the the the the the the the the the the the the'
+The kernel path matches the fp32 reference; bf16 stock is the arm that diverges.
+
+== real_tf.py, same model, teacher-forced, one token at a time with KV cache (T = 1 kernels), rel. logit error vs fp32 stock
+pos  after        margin  err_kern err_stock  top1 truth / kernel / stock
+  0  ' is'          0.69  2.73e-01 1.62e-01  ' the' / ' the' / ' the'
+  1  ' the'         2.44  8.76e-02 1.93e-01  ' the' / ' the' / ' the'
+  2  ' capital'     3.69  5.48e-01 2.91e-01  ' of' / ' of' / ' of'
+  3  ' of'          4.27  2.24e-01 3.93e-01  ' France' / ' France' / ' France'
+  4  ' France'      0.99  4.90e-01 2.94e-01  ' is' / ' is' / ' is'
+  5  ' is'          7.16  6.55e-02 2.09e-01  ' the' / ' the' / ' the'
+  6  ' the'         6.45  8.69e-02 3.59e-01  ' capital' / ' capital' / ' capital'
+  7  ' capital'     6.92  2.30e-01 2.92e-01  ' of' / ' of' / ' of'
+  8  ' of'          8.04  2.31e-01 5.62e-01  ' France' / ' France' / ' France'
+  9  ' France'      4.45  2.81e-01 2.76e-01  ' is' / ' is' / ' is'
+mean err kernel 2.52e-01 stock 3.03e-01
+(raw text is out of distribution for this chat model: bf16 rounding alone moves the logits by ~30% in both arms)
+
+== hdr.py: dtype of expert scales/biases in converted models (safetensors headers)
+BF16: Qwen3-30B-A3B, gemma-4-26b, LFM2.5-8B-A1B, GLM-4.7-Flash, Qwen3.6-35B-A3B. F16: DeepSeek-V2-Lite.
+
+== prefill, main -> branch (ea3da29), from runs/r9/upstream_mlx_lm_benchmark.log, mean of 2 passes
+model                               B=1                       B=8     B=32    load at B=1 prefill (128 tok)
+Qwen3-30B-A3B-4bit                  504.8 -> 601.7  1.192x    0.999x  0.993x  8
+GLM-4.7-Flash-4bit                  428.4 -> 511.8  1.195x    1.003x  1.007x  8
+DeepSeek-V2-Lite-Chat-4bit-mlx      702.7 -> 806.3  1.147x    0.999x  0.997x  12
+gemma-4-26b-a4b-it-4bit             529.0 -> 592.0  1.119x    1.001x  1.001x  8
+LFM2.5-8B-A1B-MLX-4bit             1172.8 -> 1271.7 1.084x    0.998x  1.000x  16
+
+== stock dispatch in MLX (read in source, backend/metal/quantized.cpp)
+gather_qmm -> gather_qmm_rhs when M == 1, B >= 16, sorted indices, B / E >= 4; else gather_qmv.
+gather_qmm_rhs uses the NAX kernel when is_nax_available() (macOS >= 26.2, GPU generation >= 17, >= 18 for 'p').
+Decode load at B = 32 (T*k/E): Qwen3 2, Gemma-4 2, GLM 2, DeepSeek 3, LFM2.5 4.
+Nothing was measured on any chip other than the M4 Pro.
