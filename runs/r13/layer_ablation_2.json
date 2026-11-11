@@ -1,0 +1,31 @@
+{
+ "layers": 6,
+ "arch": "applegpu_g16s",
+ "peak_gb": 0.66,
+ "variants": {
+  "base": {
+   "us_per_layer": 306.5,
+   "saved_us_per_layer": 0.0
+  },
+  "router_fused": {
+   "us_per_layer": 298.8,
+   "saved_us_per_layer": 7.7
+  },
+  "router_tail_removed": {
+   "us_per_layer": 285.4,
+   "saved_us_per_layer": 21.1
+  },
+  "adds_removed": {
+   "us_per_layer": 305.5,
+   "saved_us_per_layer": 1.0
+  },
+  "qk_norm_removed": {
+   "us_per_layer": 301.6,
+   "saved_us_per_layer": 4.9
+  },
+  "all": {
+   "us_per_layer": 292.0,
+   "saved_us_per_layer": 14.5
+  }
+ }
+}

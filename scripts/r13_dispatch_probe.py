@@ -30,12 +30,24 @@ def make_layers():
     return layers
 
 
+# A user kernel that does as little as an add: is a mx.fast.metal_kernel call dearer than a built-in op?
+_custom = mx.fast.metal_kernel(
+    name="r13_probe_add",
+    input_names=["a", "b"],
+    output_names=["out"],
+    source="uint i = thread_position_in_grid.x; out[i] = static_cast<T>(a[i] + b[i]);",
+)
+
+
 def step(layers, x, w, n, kind):
     for lin in layers:
         h = lin(x)[..., :D]
         for i in range(n):
             if kind == "norm":
                 h = mx.fast.rms_norm(h, w, 1e-6)
+            elif kind == "custom":
+                h = _custom(inputs=[h, x], template=[("T", x.dtype)], grid=(D, 1, 1), threadgroup=(256, 1, 1),
+                            output_shapes=[x.shape], output_dtypes=[x.dtype])[0]
             else:
                 h = h + x
         x = h
@@ -63,7 +75,7 @@ def main():
         "mb_per_buffer": os.environ.get("MLX_MAX_MB_PER_BUFFER", "default"),
         "arch": mx.device_info().get("architecture"),
     }
-    for kind in ("norm", "add"):
+    for kind in ("norm", "add", "custom"):
         ns = (0, 4, 8, 16, 32)
         ts = [ms_per_step(layers, x, w, n, kind) for n in ns]
         # least-squares slope: ms per (48 * n) dispatches -> us per dispatch

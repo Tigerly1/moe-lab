@@ -20,6 +20,26 @@ Question: where can a larger M4 win still come from? Synthetic chain, no model (
 - **Estimate, not measured:** a Qwen3 decode layer issues about 21–31 small ops (counted from the model code), so 48 layers spend roughly 2–3 ms of an 11.4–12.6 ms token on them. Removing ~9 per layer by fusion would save about 1 ms (~8%). This is the lead for backlog #16; no e2e number exists yet.
 - **Side observation:** one 4.7 MB GEMV takes 32 µs in the chain (146 GB/s effective, against 224–244 probed), so small dense matrices also pay a fixed cost per call.
 
+### Round 13b: which small ops of a Qwen3-MoE layer are worth fusing (mostly: none)
+
+Synthetic model with the real Qwen3-30B-A3B layer dimensions, 6 layers, 16 experts, random weights (~320 MB, `scripts/r13_layer_ablation.py`), single-stream decode with KV cache, baseline = mlx-lm with the #2044 expert kernels. 5 process launches (`runs/r13/layer_ablation_{1..5}.json`), best of 5–7 rounds each. Baseline: 304–308 µs per layer. "(bound)" variants change the output and only show the most a fused kernel could save.
+
+| change | saved per layer, µs (launches) | share of the layer |
+|---|---|---|
+| both residual adds removed (bound) | −0.2 / 1.0 / 1.1 / 1.0 / 0.1 | ≤ 0.4% |
+| q_norm and k_norm removed (bound) | 2.5 / 4.9 / 0.9 / 2.4 / 0.2 | ≤ 1.6% |
+| router tail removed: softmax, argpartition, take, sum, divide (bound) | 25.8 / 21.1 / 23.0 / 21.2 / 21.0 | 7–8% |
+| router tail fused (`moelab/router.py`), exact up to tie order | 8.3 / 7.7 / 5.8 / 6.1 / 3.8 | 1–3% |
+| same, kernel writes uint32 ids and bf16 weights (no casts) | 8.2 / 4.9 (2 launches) | 2–3% |
+
+- **Killed: backlog #16** (fusing add + norm, q/k norm + RoPE). These ops cost ≤ 2% of a layer together; the kill criterion was 3% e2e. The 1.7–2.7 µs per op from the first probe does not carry over to the real layer.
+- **The router tail is the only small-op item that matters:** 21–26 µs per layer. The existing fused router recovers 4–8 µs of it on this model (E = 16). On the real Qwen3 (E = 128) the stored e2e runs show kernels + fused router at 1.17× against 1.09–1.11× for kernels only. The fused router is not part of mlx-lm#2044.
+- **A custom `mx.fast.metal_kernel` call costs the same as a built-in op:** 2.71–2.75 µs against 2.70–2.77 µs for `rms_norm` (`dispatch_probe_custom_{1,2}.json`).
+- **Per `mx.eval`:** 124–227 µs (`gemv_chain_length.json`, chain lengths 6–48). In decode that is about 2% of a token.
+- **Stock dense GEMV:** 212–228 GB/s marginal on the fast path (`gemv_fixed_cost_{1,2}.json`). K = 2880 and 5760 (not multiples of 512) run at 103–105 and 168 GB/s effective: the known K % 512 cliff (backlog #10).
+
+**Layer budget, single stream (estimate from these runs):** a Qwen3 layer reads 31.8 MB of weights, 141 µs at 225 GB/s, which is 54% of the 262 µs measured in the real model. The rest is spread over the router tail (21–26 µs), about five serial weight kernels with a few µs of ramp each, ~10 small ops, attention over the KV cache and the per-token sync. No single remaining item is above 8%.
+
 ## 2026-11-11 — audit of the open PR ml-explore/mlx-lm#2044
 
 Question: is the published PR (head `ea3da29`) still correct, and does it make sense on other Apple GPUs (M5, M6)?
