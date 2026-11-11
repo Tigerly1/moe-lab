@@ -1,0 +1,39 @@
+{
+ "ops_per_buffer": "default",
+ "mb_per_buffer": "default",
+ "arch": "applegpu_g16s",
+ "norm": {
+  "n": [
+   0,
+   4,
+   8,
+   16,
+   32
+  ],
+  "ms_per_step": [
+   1.551,
+   2.085,
+   2.612,
+   3.727,
+   5.725
+  ],
+  "us_per_dispatch": 2.72
+ },
+ "add": {
+  "n": [
+   0,
+   4,
+   8,
+   16,
+   32
+  ],
+  "ms_per_step": [
+   1.536,
+   1.895,
+   2.19,
+   2.858,
+   4.145
+  ],
+  "us_per_dispatch": 1.69
+ }
+}

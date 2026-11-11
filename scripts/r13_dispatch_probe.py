@@ -25,8 +25,8 @@ def make_layers():
     for _ in range(LAYERS):
         lin = nn.QuantizedLinear(D, O, bias=False, group_size=64, bits=4)
         lin.set_dtype(mx.bfloat16)
+        mx.eval(lin.parameters())  # per layer, so the fp32 init weights are freed at once
         layers.append(lin)
-    mx.eval([l.parameters() for l in layers])
     return layers
 
 

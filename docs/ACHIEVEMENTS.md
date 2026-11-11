@@ -4,6 +4,22 @@ Verified results only: re-measured (≥2 process launches or `moelab.compare`), 
 Entries that do not meet this rule are marked in place (see the 2026-11-10 verification pass).
 Hardware: Apple M4 Pro, 48 GB, unless stated. Details and caveats: `docs/RESULTS.md`.
 
+## 2026-11-11 — round 13: cost of one small Metal dispatch (probe)
+
+Question: where can a larger M4 win still come from? Synthetic chain, no model (`scripts/r13_dispatch_probe.py`): 48 "layers", each one 4-bit GEMV (2048 → 4096, 4.7 MB) plus n tiny ops on a 2048-vector. Evidence: `runs/r13/dispatch_probe_*.json`. M4 Pro on AC, one process per setting, no bandwidth guard.
+
+| command buffer (ops) | µs per `rms_norm` | µs per `add` | 48 GEMVs alone |
+|---|---|---|---|
+| 50 (default), launch 1 / 2 | 2.72 / 2.70 | 1.69 / 1.70 | 1.55 / 1.58 ms |
+| 25 | 2.72 | 1.72 | 1.54 ms |
+| 200 | 2.72 | 1.61 | 1.67 ms |
+| 1000 | 3.22 | 2.18 | 1.68 ms |
+
+- **Measured:** a small op costs 1.7–2.7 µs in a decode-like chain, linear in the number of ops (n = 0–32 per layer).
+- **Measured:** larger command buffers do not help here (200: same slope, GEMVs 8% slower; 1000: worse). Backlog #14 is negative on this proxy; it was not run on a real model.
+- **Estimate, not measured:** a Qwen3 decode layer issues about 21–31 small ops (counted from the model code), so 48 layers spend roughly 2–3 ms of an 11.4–12.6 ms token on them. Removing ~9 per layer by fusion would save about 1 ms (~8%). This is the lead for backlog #16; no e2e number exists yet.
+- **Side observation:** one 4.7 MB GEMV takes 32 µs in the chain (146 GB/s effective, against 224–244 probed), so small dense matrices also pay a fixed cost per call.
+
 ## 2026-11-11 — audit of the open PR ml-explore/mlx-lm#2044
 
 Question: is the published PR (head `ea3da29`) still correct, and does it make sense on other Apple GPUs (M5, M6)?
