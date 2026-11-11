@@ -29,10 +29,21 @@ Gradients: the op is an `mx.custom_function` whose VJP is the `gather_qmm` math,
 generation tok/s, mean of 2 passes (each `-n 3`). Prompt (prefill) speed: 8–20% faster at B=1 (e.g. Qwen3 505 → 602 tok/s), unchanged (±1%) at B=8 and B=32.
 
 ## Hardware scope
-- Everything above was measured on one machine: M4 Pro (`applegpu_g16s`), macOS 26.
+- Everything above was measured on one machine: M4 Pro (`applegpu_g16s`), macOS 26. Nothing was run on an M5 or M6.
 - M1–M4: same code path as measured (`gather_qmv` / `gather_qmm_rhs` without NAX in MLX). Not measured on M1–M3 or on base/Max/Ultra variants; the gain depends on memory bandwidth and GPU core count.
-- M5 and later: the kernels only replace the `gather_qmv` path (T·k/E < 4). The B=32 rows for Qwen3, Gemma-4, GLM and DeepSeek fall in that range (2–3 tokens per expert); LFM2.5 at B=32 is at 4 and stays on `gather_qmm`, as does the 128-token prefill. Not measured there; a run on an M5/M6 would be welcome.
-- Threadgroups are at most 256 threads; `simdgroup_matrix` is available on all Apple Silicon GPUs.
+
+**Why it should work on M5 / M6** (reasoning from the MLX source, not a measurement):
+- **Correctness:** the kernels are plain `mx.fast.metal_kernel` code: threadgroups of at most 256 threads and 8×8 `simdgroup_matrix`, which MLX's own GEMM kernels use on every Apple GPU. There is no chip-specific code.
+- **Below 4 tokens per expert the baseline is the same as on M4.** `SwitchGLU` calls `gather_qmm` with M = 1. `GatherQMM::eval_gpu` sends that to `gather_qmm_rhs` only for sorted indices with B ≥ 16 and B/E ≥ 4, and otherwise to `gather_qmv`, which has no NAX variant. The gain in this range comes from reading and dequantizing each expert once per step instead of once per (token, slot). That is fewer bytes moved, which does not depend on the GPU generation.
+- **From 4 tokens per expert the PR steps aside.** There `gather_qmm_rhs` runs the NAX kernel on M5 / M6, which I could not measure against. On GPU generation ≥ 17 the kernels are used only below 4 (`_nax_gpu()`, `test_nax_gpu_keeps_gather_qmm_rhs`), so that range runs exactly as on main.
+- In the table this keeps the B=8 column and the B=32 rows for Qwen3, Gemma-4, GLM and DeepSeek (2–3 tokens per expert). LFM2.5 at B=32 (4 per expert) and the 128-token prefill (8–16) fall back.
+
+**To be checked on an M5 / M6** (I have no access to one; any of the five models works):
+1. `python -m unittest tests.test_switch_kernels` passes (fp32 reference match, gradient, fallbacks).
+2. `mlx_lm benchmark --model mlx-community/Qwen3-30B-A3B-4bit -p 128 -g 256 -n 3 -b 8` and `-b 32`, main vs this branch. Expected: generation tok/s higher on the branch, prompt tok/s equal. The size of the gain is unknown: bandwidth differs and the dense layers run NAX kernels there.
+3. Whether 4 is too low a limit: the same benchmark with `switch_kernels._nax = False` (the M4 gate) on `mlx-community/LFM2.5-8B-A1B-MLX-4bit -b 32` (4 per expert) and on the `-b 1` prompt speed (8–16 per expert). If the kernels still beat NAX there, the limit can be raised.
+
+If 1 or 2 fails, I will restrict the PR to GPU generation ≤ 16.
 
 ## Scope and alternatives
 - **Where the gain is:** concurrent requests (`mlx_lm.server` with `--decode-concurrency`, `batch_generate`). A single stream gains only 3–8%.

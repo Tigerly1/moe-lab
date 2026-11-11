@@ -1,5 +1,5 @@
 PR ml-explore/mlx-lm#2044 audit, 2026-11-11, Apple M4 Pro (applegpu_g16s), macOS 26, mlx 0.32.4.
-Published head ea3da29; local fix 42e5d30 (not pushed), patch in pr2044_fix.patch. Scripts in this directory; run with PYTHONPATH=<mlx-lm checkout>.
+Published head ea3da29; fix 42e5d30 (pushed to the PR branch 2026-11-11), patch in pr2044_fix.patch. Scripts in this directory; run with PYTHONPATH=<mlx-lm checkout>.
 
 == stress.py on the fixed branch (kernel path vs stock vs fp32 truth, 8 shapes, 4 routings, bf16/fp16)
 cases 1136  worst rel err vs fp32: ours 4.99e-03 stock 7.94e-03  worst ours/stock ratio 1.24  bad 0

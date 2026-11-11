@@ -22,11 +22,11 @@ Evidence: `runs/r12/pr2044_audit.log`, scripts next to it. Measured on the M4 Pr
 - **PR text:** "prefill unchanged within noise" is false at B=1: prefill is 8–20% faster (unchanged at B=8/32).
 - **M5 and later:** from 4 tokens per expert MLX runs `gather_qmm` on the NAX kernels. The published gate (load ≤ 8 or ≤ 24) replaces that path without any measurement against it.
 
-**Fix (local commit `42e5d30`, not pushed; `runs/r12/pr2044_fix.patch`):**
+**Fix (commit `42e5d30`, pushed to the PR branch on 2026-11-11; `runs/r12/pr2044_fix.patch`):**
 - Fall back on zero tokens, k > 8 and scale dtype ≠ input dtype.
 - On GPU generation ≥ 17 use the kernels only at load < 4, where stock still runs `gather_qmv`. M1–M4 gate unchanged.
 - Decode at B=32 stays on the kernels for Qwen3, Gemma-4, GLM (load 2) and DeepSeek (3). LFM2.5 (load 4) and the B=1 prefill fall back there.
-- Proposed PR text with a hardware-scope section: `runs/r12/pr2044_body_proposed.md`.
+- PR description replaced (`runs/r12/pr2044_body.md`). It now states why the PR should work on M5 / M6 (same `gather_qmv` baseline below 4, fallback from 4) and lists three checks for someone with that hardware: the kernel unit test, the B=8/B=32 benchmark, and whether the limit of 4 can be raised.
 
 **Not known:**
 - Any speed number on M1–M3, base/Max/Ultra, M5 or M6. The M5+ gate is a safety limit, not a measured crossover.
