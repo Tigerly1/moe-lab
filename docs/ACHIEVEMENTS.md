@@ -4,6 +4,21 @@ Verified results only: re-measured (≥2 process launches or `moelab.compare`), 
 Entries that do not meet this rule are marked in place (see the 2026-11-10 verification pass).
 Hardware: Apple M4 Pro, 48 GB, unless stated. Details and caveats: `docs/RESULTS.md`.
 
+## 2026-11-12 — upstream moved: maintainer PRs #2053 and #2054 cover the single-token path and the router
+
+No measurement of ours in this entry. Read from the PR pages and diffs on 2026-11-12.
+
+| PR (ml-explore/mlx-lm) | author, opened | what | their numbers (M5 Ultra, B=1, tok/s) |
+|---|---|---|---|
+| #2053 | Pierre Ablin, 2026-11-12 00:23 UTC | `SwitchGLU.combine`: one token, two kernels (gate+up+GLU+routing weight; down + weighted sum over experts). Affine 2/3/4/5/6/8-bit, group size 32/64/128, bf16/fp16. 39 model call sites | Qwen3-30B 156.3 → 175.4, DeepSeek-V2-Lite 240.0 → 270.5, Gemma-4-26B 156.7 → 171.2, GLM-4.7-Flash 110.1 → 120.5 |
+| #2054 (draft) | same, 00:54 UTC | `softmax_topk`: softmax + top-k + renormalize in one kernel (ties: lowest id); `expert_routing` extended to DeepSeek-V3 groups; 34 MoE blocks | Qwen3-30B 156.3 → 166.1 (1.06×), LFM2.5 328.1 → 388.4 (1.18×), Ling-mini 330.8 → 412.3 (1.25×) |
+
+Consequences:
+- **Fused router port: dropped.** #2054 is the same kernel as `moelab/router.py` (same algorithm, same tie rule), wired into more models. Their 1.06× on Qwen3 agrees with our stored 1.17× vs 1.09–1.11×. A second PR from us would be a duplicate. Backlog #7 closed.
+- **Our T = 1 path in #2044 is now redundant upstream.** #2053 covers more formats and also fuses the weighted sum, which ours leaves to three small ops. Not compared on the M4 Pro: `scripts/r14_upstream_t1.py` is written but **not run** (it executes code from the upstream PRs and needs the user's approval).
+- **The T > 1 path of #2044 is not covered by either PR.** #2053 states it targets a single token and names #2044 as the small-batch counterpart. `combine` falls back to `SwitchGLU.__call__` for T > 1, which is where our hook sits, so the two compose: #2053 at T = 1, #2044 at T > 1. Both PRs add the same `metal_act` tag (0 = SwiGLU, 1 = GeGLU).
+- **Policy problem with #2044.** `CONTRIBUTING.md` of mlx-lm (since 2026-08-21) prohibits AI-written PR descriptions and requires an AI usage disclosure. The description of #2044 was written by Claude. It has to be rewritten by the author, with the disclosure line. Missed at opening (2026-11-07) and at the update (2026-11-11).
+
 ## 2026-11-11 — round 13: cost of one small Metal dispatch (probe)
 
 Question: where can a larger M4 win still come from? Synthetic chain, no model (`scripts/r13_dispatch_probe.py`): 48 "layers", each one 4-bit GEMV (2048 → 4096, 4.7 MB) plus n tiny ops on a 2048-vector. Evidence: `runs/r13/dispatch_probe_*.json`. M4 Pro on AC, one process per setting, no bandwidth guard.
