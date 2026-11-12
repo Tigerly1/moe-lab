@@ -4,6 +4,15 @@ Verified results only: re-measured (≥2 process launches or `moelab.compare`), 
 Entries that do not meet this rule are marked in place (see the 2026-11-10 verification pass).
 Hardware: Apple M4 Pro, 48 GB, unless stated. Details and caveats: `docs/RESULTS.md`.
 
+## 2026-11-12 — #2044 reduced to the batch path (commit `61accb9`)
+
+- **Removed:** the T = 1 kernels (gate+up GEMV, down GEMV). One token now takes the generic path; upstream #2053 covers it.
+- **Moved:** `mlx_lm/models/switch_kernels.py` → `mlx_lm/kernels/switch_glu_batch.py`, entry point `switch_glu_by_expert`; tests in `tests/test_switch_glu_batch.py`. PR size 742 → 637 added lines, 5 files.
+- **Checked:** `tests.test_switch_glu_batch` + `tests.test_kernels` 14 tests OK; `tests.test_models` OK (skipped=1). Full suite not rerun. black / isort / ruff at the pinned versions pass.
+- **Composition with #2053, by an actual merge** (local branch `compose-2053`, not pushed, **not run**): 3 files conflict in 5 hunks, all adjacent one-line additions (imports, `__all__`, the `metal_act` comment). After the merge `combine` handles T = 1 and falls through to `__call__`, where the batch hook sits, for T > 1.
+- **Not re-measured:** the B=8 / B=32 numbers are from before this commit. The T > 1 kernel code is unchanged, so they should hold; B=1 generation is now equal to main by construction. Prefill at B=1 (T = 128) still takes the kernels.
+- The PR checkout moved from temporary storage (files were being purged) to a clone next to moe-lab.
+
 ## 2026-11-12 — upstream moved: maintainer PRs #2053 and #2054 cover the single-token path and the router
 
 No measurement of ours in this entry. Read from the PR pages and diffs on 2026-11-12.
@@ -15,7 +24,7 @@ No measurement of ours in this entry. Read from the PR pages and diffs on 2026-1
 
 Consequences:
 - **Fused router port: dropped.** #2054 is the same kernel as `moelab/router.py` (same algorithm, same tie rule), wired into more models. Their 1.06× on Qwen3 agrees with our stored 1.17× vs 1.09–1.11×. A second PR from us would be a duplicate. Backlog #7 closed.
-- **Our T = 1 path in #2044 is now redundant upstream.** #2053 covers more formats and also fuses the weighted sum, which ours leaves to three small ops. Not compared on the M4 Pro: `scripts/r14_upstream_t1.py` is written but **not run** (it executes code from the upstream PRs and needs the user's approval).
+- **Our T = 1 path in #2044 is now redundant upstream.** #2053 covers more formats and also fuses the weighted sum, which ours leaves to three small ops. Not compared on the M4 Pro: `scripts/r14_upstream_t1.py` (upstream kernels on a synthetic layer) is written but **not run**; it executes code from the upstream PRs, which the user runs by hand.
 - **The T > 1 path of #2044 is not covered by either PR.** #2053 states it targets a single token and names #2044 as the small-batch counterpart. `combine` falls back to `SwitchGLU.__call__` for T > 1, which is where our hook sits, so the two compose: #2053 at T = 1, #2044 at T > 1. Both PRs add the same `metal_act` tag (0 = SwiGLU, 1 = GeGLU).
 - **Policy problem with #2044.** `CONTRIBUTING.md` of mlx-lm (since 2026-08-21) prohibits AI-written PR descriptions and requires an AI usage disclosure. The description of #2044 was written by Claude. It has to be rewritten by the author, with the disclosure line. Missed at opening (2026-11-07) and at the update (2026-11-11).
 

@@ -1,4 +1,4 @@
-"""Round 14: single-token expert path of mlx-lm#2044 (ours) against the upstream PRs #2053 and #2054.
+"""Round 14: the upstream single-token kernels of mlx-lm#2053 and #2054 on this machine (synthetic layer).
 
 Same synthetic model as scripts/r13_layer_ablation.py: real Qwen3-30B-A3B layer dimensions, 6 layers,
 16 experts, random weights (~320 MB, no download). T = 1 decode only.
@@ -7,7 +7,7 @@ Same synthetic model as scripts/r13_layer_ablation.py: real Qwen3-30B-A3B layer 
   #2054: softmax_topk = softmax + top-k + renormalize in one kernel
 
 The two upstream kernel files are loaded from a directory (not vendored here):
-    PYTHONPATH=<mlx-lm checkout with switch_kernels> python scripts/r14_upstream_t1.py <dir> out.json
+    python scripts/r14_upstream_t1.py <dir> out.json      (any mlx-lm >= 0.32; #2044 no longer has a T = 1 path)
 <dir> holds up_switch_glu.py (kernels/switch_glu.py of #2053) and up_softmax_topk.py (kernels/softmax_topk.py of #2054).
 """
 
@@ -30,7 +30,7 @@ def load(name):
 
 
 up_glu, up_router = load("up_switch_glu"), load("up_softmax_topk")
-ours_hook = switch_layers.switch_kernels.switch_glu
+switch_layers.SwiGLU.metal_act = 0  # the tag #2053 adds; can_combine needs it
 
 L, E, K, STEPS, ROUNDS = 6, 16, 8, 200, 7
 Block = qwen3_moe.Qwen3MoeSparseMoeBlock
@@ -56,7 +56,7 @@ def build():
 
 
 def block(router, experts):
-    """router: 'stock' | 'fused' (#2054).  experts: 'stock' | 'ours' (#2044) | 'combine' (#2053)."""
+    """router: 'stock' | 'fused' (#2054).  experts: 'stock' | 'combine' (#2053)."""
 
     def call(self, x):
         gates = self.gate(x)
@@ -78,18 +78,14 @@ def block(router, experts):
 
 VARIANTS = {  # name: (router, experts)
     "main": ("stock", "stock"),
-    "pr2044": ("stock", "ours"),
     "pr2053": ("stock", "combine"),
     "pr2054": ("fused", "stock"),
-    "pr2044+2054": ("fused", "ours"),
     "pr2053+2054": ("fused", "combine"),
 }
 
 
 def configure(name):
-    router, experts = VARIANTS[name]
-    switch_layers.switch_kernels.switch_glu = ours_hook if experts == "ours" else (lambda *a: None)
-    Block.__call__ = block(router, experts)
+    Block.__call__ = block(*VARIANTS[name])
 
 
 def run(model, steps):
